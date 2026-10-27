@@ -107,7 +107,7 @@ export async function inspectCheckout(path, {
     build: { present: missingBuild.length === 0, missing: missingBuild, provenanceVerified: false },
     setup: await inspectSetup(repo, now),
     guidedUrl, browserVerified: false, passkeyVerified: false,
-    capabilities: { guardianRecovery: 'live-wallet-confirmation', guidedWithdrawal: 'demonstration' },
+    capabilities: { guardianRecovery: 'live-wallet-confirmation', guidedWithdrawal: 'live-wallet-confirmation' },
   };
 }
 

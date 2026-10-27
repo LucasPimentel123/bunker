@@ -82,6 +82,6 @@ invalid setup state. This verifies the portable files and helper behavior; it is
 not an end-to-end evaluation of every model or host's decisions.
 
 The user always performs wallet/passkey interactions. Current product limits do
-not change with the agent: guided withdrawal remains demonstrative, guardian
+not change with the agent: guided withdrawal requires real user-approved transactions, guardian
 recovery can submit real wallet-confirmed transactions, and publisher-authenticated
 production releases are not available yet.

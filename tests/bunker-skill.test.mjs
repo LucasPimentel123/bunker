@@ -82,7 +82,7 @@ test('installed state stays separate from browser, passkey and build provenance 
   assert.equal(result.browserVerified, false);
   assert.equal(result.passkeyVerified, false);
   assert.equal(result.capabilities.guardianRecovery, 'live-wallet-confirmation');
-  assert.equal(result.capabilities.guidedWithdrawal, 'demonstration');
+  assert.equal(result.capabilities.guidedWithdrawal, 'live-wallet-confirmation');
 });
 
 test('interrupted trust or hosts mutations and operation locks never become a fresh install', async t => {

@@ -8,6 +8,7 @@ export type TokenExpectation = { token: Address; recipient: Address; minimum: st
 // effects as one awaited immediately.
 export type ReceiptExpectation = {
   safe?: Address; safeHash?: Hex;
+  moduleExecution?: { safe: Address; module: Address };
   // 1 only for an approved MultiSendCallOnly batch; `calls` children.
   operation?: 0 | 1; multisend?: Address; calls?: number;
   receive?: TokenExpectation;
@@ -58,6 +59,18 @@ export function verifyTokenReceipt(receipt: Pick<TransactionReceipt, "logs">, ef
 export function verifyReceipt(receipt: Pick<TransactionReceipt, "logs" | "status">, expectation: ReceiptExpectation = {}) {
   if (receipt.status !== "success") throw new Error("Transaction reverted");
   if (expectation.operation === 1 && (!expectation.safe || !expectation.safeHash)) throw new Error("Batch receipt expectation is missing its Safe hash");
+  if (expectation.moduleExecution) {
+    const effect = expectation.moduleExecution;
+    const proved = receipt.logs.some(log => {
+      if (!same(log.address, effect.safe)) return false;
+      try {
+        const abi = log.topics.length === 2 ? parseAbi(["event ExecutionFromModuleSuccess(address indexed module)"]) : parseAbi(["event ExecutionFromModuleSuccess(address module)"]);
+        const event = decodeEventLog({abi,data:log.data,topics:log.topics as [Hex,...Hex[]]});
+        return same(event.args.module,effect.module);
+      } catch { return false; }
+    });
+    if (!proved) throw Error("Receipt does not prove successful card module execution");
+  }
   if (expectation.safe) safeReceiptSucceeded(receipt.logs, expectation.safe, expectation.safeHash);
   if (expectation.native?.length && !expectation.safeHash) throw new Error("Native batch transfers can only be proven by a Safe execution hash");
   const totals = new Map<string, TokenExpectation & { sum: bigint }>();

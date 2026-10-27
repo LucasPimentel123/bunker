@@ -138,7 +138,7 @@ export async function dispatchCard(client: PublicClient, delay: CardDelay, queue
   await check();
   const receive = queuedTransfer(queued);
   if (same(receive.recipient, delay.card)) throw new Error("Destination must differ from card Safe");
-  return { kind: "direct", chainId, account: delay.card, label: "Execute queued card withdrawal", receive, revalidate: check,
+  return { kind: "direct", chainId, account: delay.card, label: "Execute queued card withdrawal", receive, moduleExecution: { safe: delay.card, module: delay.address }, revalidate: check,
     call: { to: delay.address, value: 0n, data: encodeFunctionData({ abi: delayAbi, functionName: "executeNextTx",
       args: [queued.to, queued.value, queued.data, 0] }) } };
 }

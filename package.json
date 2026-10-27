@@ -35,7 +35,7 @@
     "bunker:setup": "PICNIC_PROOF_PROFILE=bunker node scripts/proof/setup.mjs",
     "guided:build": "vite build --config vite.guided.config.ts && vite build --config vite.guided-wallet.config.ts",
     "test:guided": "node --test tests/guided-flow.test.mjs",
-    "test:bunker:e2e": "npm run test:guided && vitest run tests/guided-access.test.ts tests/guided-passkey.test.ts tests/guided-wallet.test.ts tests/guided-recovery.test.ts tests/recovery-guardian.test.ts tests/recovery-preparation.test.ts tests/passkey-discovery.test.ts tests/passkey-proof.test.ts tests/passkey-proof.integration.test.ts tests/guided-recovery.integration.test.ts"
+    "test:bunker:e2e": "npm run test:guided && vitest run tests/guided-withdrawal.test.ts tests/guided-access.test.ts tests/guided-passkey.test.ts tests/guided-wallet.test.ts tests/guided-recovery.test.ts tests/recovery-guardian.test.ts tests/recovery-preparation.test.ts tests/passkey-discovery.test.ts tests/passkey-proof.test.ts tests/passkey-proof.integration.test.ts tests/guided-recovery.integration.test.ts"
   },
   "dependencies": {
     "@noble/curves": "1.9.1",

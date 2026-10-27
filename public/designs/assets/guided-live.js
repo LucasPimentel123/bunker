@@ -1,11 +1,11 @@
 /* Verified discovery, wallet/gas checks and explicit guardian recovery.
-   Passkey identification signs a local discovery challenge. Asset withdrawals remain demonstrative. */
+   Passkey identification signs a local discovery challenge. Withdrawals require fresh user authorization. */
 (() => {
   const root = document.getElementById('picnic-one-step'), scene = root.querySelector('.pb-scene'), back = root.querySelector('.pb-back'), forward = root.querySelector('.pb-forward');
   const marks = window.picnicGuidedIcons;
   let inventory, networks = [], available = [], source, sourceAbort, walletConnectAbort, detachSource = () => {};
   const rpcUrls = {1:'https://eth.drpc.org',10:'https://mainnet.optimism.io',56:'https://bsc-dataseed.bnbchain.org',100:'https://rpc.gnosischain.com',137:'https://polygon.drpc.org',8453:'https://mainnet.base.org',42161:'https://arb1.arbitrum.io/rpc',43114:'https://api.avax.network/ext/bc/C/rpc',999:'https://rpc.hyperliquid.xyz/evm',4663:'https://rpc.mainnet.chain.robinhood.com'};
-  const state = {screen:'access',accessCheck:undefined,recoveryTarget:'',recovery:undefined,recoveryOwner:'',recoveryIndex:0,recoverySkipped:new Set(),recoveryExcluded:new Set(),recoverySending:false,recoveryMessage:'',walletConnect:undefined,method:'passkey',passkeyReady:false,discoveryMessage:'',sourceWallet:'',sourceProvider:undefined,sourceName:'',candidates:[],discoveryIssues:[],scanDone:0,scanTotal:10,selected:new Set(available.map(n=>n.id)),skipped:new Set(),destination:'',payer:'',walletName:'',provider:undefined,busy:false,sent:0,epoch:0,gas:{},funding:undefined,error:''};
+  const state = {screen:'access',accessCheck:undefined,recoveryTarget:'',recovery:undefined,recoveryOwner:'',recoveryIndex:0,recoverySkipped:new Set(),recoveryExcluded:new Set(),recoverySending:false,recoveryMessage:'',walletConnect:undefined,method:'passkey',passkeyReady:false,discoveryMessage:'',sourceWallet:'',sourceProvider:undefined,sourceName:'',candidates:[],discoveryIssues:[],scanDone:0,scanTotal:10,selected:new Set(available.map(n=>n.id)),skipped:new Set(),destination:'',payer:'',walletName:'',provider:undefined,busy:false,sent:0,withdrawal:undefined,withdrawalSending:false,withdrawalMessage:'',withdrawalDone:{},withdrawalReceipts:[],withdrawalDeferred:[],epoch:0,gas:{},funding:undefined,error:''};
   let legacyWalletId=0;
   const providers = new Map(), timers = new Set(), history = [];
   const expandedAssets = new Set();
@@ -18,12 +18,12 @@
   const chain = n => `<span class="pb-real-chain">${marks?.networks[n.id] ?? ''}</span>`;
   const eyebrow = text => `<p class="pb-eyebrow"><span class="pb-dot"></span>${escape(text)}</p>`;
   const action = (label,disabled=false) => `<div class="pb-actions"><button class="pb-primary" type="button" data-action="next" ${disabled?'disabled':''}>${escape(label)}</button><span class="pb-enter">pressione Enter ↵</span></div>`;
-  const stage = () => ({access:0,'connect-source':0,'passkey-discover':0,'passkey-confirm':0,discover:0,'check-access':0,'recover-access':0,'recovery-loading':0,'recovery-owner':0,'recovery-network':0,'recovery-overview':0,account:0,'no-account':0,scan:1,assets:1,fees:2,fund:2,skipped:2,destination:3,move:4,done:4}[state.screen]);
+  const stage = () => ({access:0,'connect-source':0,'connect-payer':0,'passkey-discover':0,'passkey-confirm':0,discover:0,'check-access':0,'recover-access':0,'recovery-loading':0,'recovery-owner':0,'recovery-network':0,'recovery-overview':0,account:0,'no-account':0,scan:1,assets:1,fees:2,fund:2,skipped:2,destination:3,move:4,done:4}[state.screen]);
   const hasPayer=()=>!!state.provider&&/^0x[a-f0-9]{40}$/i.test(state.payer)&&!/^0x0{39}[01]$/i.test(state.payer);
   const gasFor=id=>state.gas[id]?.payer?.toLowerCase()===state.payer.toLowerCase()?state.gas[id]:undefined;
   const unresolved = () => selected().filter(n=>gasFor(n.id)?.status!=='available');
   const ready=()=>!!inventory&&hasPayer()&&selected().length>0&&!unresolved().length;
-  const canFund=()=>hasPayer()&&state.selected.has(state.funding)&&gasFor(state.funding)?.status==='empty';
+  const canFund=()=>hasPayer()&&state.selected.has(state.funding)&&['empty','insufficient'].includes(gasFor(state.funding)?.status);
   function amount(value){const n=Number(value);return !Number.isFinite(n)?escape(value):n>0&&n<0.000001?'&lt; 0,000001':n.toLocaleString('pt-BR',{maximumFractionDigits:6});}
   function networkAssets(n){
     const incomplete=n.status!=='complete',id=escape(n.id);
@@ -31,13 +31,13 @@
     const issues=[...(n.issues??[])];
     if(n.failedTokens)issues.push(`${n.failedTokens} saldo(s) de tokens não respondido(s) pelo RPC.`);
     if(incomplete&&!issues.length)issues.push('A consulta não foi concluída. Saldos ausentes continuam desconhecidos.');
-    return `<div class="pb-network-group"><label class="pb-network-select"><input type="checkbox" data-network="${id}" aria-label="Selecionar ativos de ${escape(n.name)}" ${state.selected.has(n.id)?'checked':''} ${!n.items.length?'disabled':''}></label><details class="pb-network-assets" data-assets-network="${id}" ${expandedAssets.has(n.id)?'open':''}><summary>${chain(n)}<span class="pb-network-name">${escape(n.name)}</span><span class="pb-network-count ${incomplete?'pb-network-partial':''}">${label}${incomplete&&n.items.length?' · parcial':''}</span><svg class="pb-network-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary><div class="pb-network-content">${n.items.length?`<table class="pb-assets"><caption class="pb-visually-hidden">Ativos encontrados em ${escape(n.name)}</caption><thead><tr><th scope="col">Ativo</th><th scope="col">Saldo</th></tr></thead><tbody>${n.items.map(item=>`<tr><td>${item.kind==='card'?'Cartão · ':''}${escape(item.name)}${['position','mamo'].includes(item.kind)?'<small> · investimento</small>':''}</td><td>${amount(item.balance)}</td></tr>`).join('')}</tbody></table>`:''}${incomplete?`<p class="pb-error">${n.items.length?'Os saldos acima foram encontrados. Os demais ainda são desconhecidos.':'Nenhum saldo confirmado. Isso não significa saldo zero.'}</p>`:''}${issues.length?`<ul class="pb-network-issues">${issues.map(issue=>`<li>${escape(issue)}</li>`).join('')}</ul>`:''}${n.totalTokens!==undefined?`<p class="pb-network-meta">${escape(n.checkedTokens??0)} de ${escape(n.totalTokens)} tokens consultados${n.unreadableTokens?` · ${escape(n.unreadableTokens)} contrato(s) sem leitura de saldo`:''}</p>`:''}${n.sources?.length?`<p class="pb-network-meta">Fonte: ${n.sources.map(escape).join(', ')}</p>`:''}</div></details></div>`;
+    return `<div class="pb-network-group"><label class="pb-network-select"><input type="checkbox" data-network="${id}" aria-label="Selecionar ativos de ${escape(n.name)}" ${state.selected.has(n.id)?'checked':''} ${!n.items.length?'disabled':''}></label><details class="pb-network-assets" data-assets-network="${id}" ${expandedAssets.has(n.id)?'open':''}><summary>${chain(n)}<span class="pb-network-name">${escape(n.name)}</span><span class="pb-network-count ${incomplete?'pb-network-partial':''}">${label}${incomplete&&n.items.length?' · parcial':''}</span><svg class="pb-network-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary><div class="pb-network-content">${n.items.length?`<table class="pb-assets"><caption class="pb-visually-hidden">Ativos encontrados em ${escape(n.name)}</caption><thead><tr><th scope="col">Ativo</th><th scope="col">Saldo</th></tr></thead><tbody>${n.items.map(item=>`<tr><td>${item.kind==='card'?'Cartão · ':''}${escape(item.name)}${['position','mamo'].includes(item.kind)?'<small> · investimento</small>':''}</td><td>${amount(item.balance)}</td></tr>`).join('')}</tbody></table>`:''}${incomplete?`<p class="pb-error">${n.items.length?'Os saldos acima foram encontrados. Os demais ainda são desconhecidos.':'Nenhum saldo confirmado. Isso não significa saldo zero.'}</p>`:''}${issues.length?`<ul class="pb-network-issues">${issues.map(issue=>`<li>${escape(issue)}</li>`).join('')}</ul>`:''}${n.totalTokens!==undefined?`<p class="pb-network-meta">${escape(n.checkedTokens??0)} de ${escape(n.totalTokens)} tokens consultados${n.unreadableTokens?` · ${escape(n.unreadableTokens)} contrato(s) sem leitura de saldo`:''}</p>`:''}${n.chainId===100&&incomplete?`<button type="button" class="pb-link" data-action="retry-cards" ${state.busy?'disabled':''}>${state.busy?'Buscando cartões…':'Continuar busca de cartões'}</button>`:''}${n.sources?.length?`<p class="pb-network-meta">Fonte: ${n.sources.map(escape).join(', ')}</p>`:''}</div></details></div>`;
   }
   function nativeAmount(value){const s=value.toString().padStart(19,'0');return amount(s.slice(0,-18)+'.'+s.slice(-18));}
   function cancel(){walletConnectAbort?.abort();walletConnectAbort=undefined;state.walletConnect=undefined;root.classList.remove('pb-answer-leaving','pb-answer-entering');sourceAbort?.abort();sourceAbort=undefined;timers.forEach(clearTimeout);timers.clear();state.epoch++;}
   function later(fn,ms){const epoch=state.epoch;const id=setTimeout(()=>{timers.delete(id);if(epoch===state.epoch)fn();},ms);timers.add(id);}
   function syncForward(){
-    forward.disabled=state.busy||!(state.screen==='recovery-owner'&&!recoveryOwnerError()||state.screen==='assets'&&count()>0||state.screen==='fees'&&state.payer&&selected().length&&!unresolved().length||state.screen==='destination'&&validDestination()&&state.payer&&!unresolved().length);
+    forward.disabled=state.busy||!(state.screen==='connect-payer'&&hasPayer()||state.screen==='recovery-owner'&&!recoveryOwnerError()||state.screen==='assets'&&count()>0||state.screen==='fees'&&state.payer&&selected().length&&!unresolved().length||state.screen==='destination'&&validDestination()&&state.payer&&!unresolved().length);
     forward.setAttribute('aria-label',forward.disabled?'Conclua a decisão desta tela para continuar':'Próxima pergunta');
   }
   function chrome(){
@@ -45,14 +45,14 @@
     root.querySelectorAll('.pb-road>span').forEach((el,i)=>{if(i===index&&!done)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current');el.querySelector('b').textContent=i<index||done?'✓':String(i+1);});
     const value=done?100:state.screen==='move'?80+20*state.sent/Math.max(selected().length,1):index*20;
     root.querySelector('.pb-track').setAttribute('aria-valuenow',String(Math.round(value)));
-    root.querySelector('.pb-track').setAttribute('aria-valuetext',done?'Prévia concluída':`Etapa ${index+1} de 5`);
+    root.querySelector('.pb-track').setAttribute('aria-valuetext',done?'Etapas concluídas':`Etapa ${index+1} de 5`);
     root.querySelector('.pb-fill').style.width=(value||3)+'%';
     const stepName=['Acesso','Ativos','Taxas','Destino','Retirada'][index];
     root.querySelector('.pb-step-label').textContent=done?'Concluído':stepName;
     root.querySelector('.pb-step-count').textContent=done?'5 / 5':`${index+1} / 5`;
     root.querySelector('.pb-segments').innerHTML=[0,1,2,3,4].map(i=>`<i class="${done||i<index?'complete':i===index?'active':''}"></i>`).join('');
-    root.querySelector('.pb-step-progress').setAttribute('aria-label',done?'Demonstração concluída':`${stepName}, etapa ${index+1} de 5`);
-    back.disabled=state.screen==='access'||state.recoverySending;
+    root.querySelector('.pb-step-progress').setAttribute('aria-label',done?'Etapas concluídas':`${stepName}, etapa ${index+1} de 5`);
+    back.disabled=state.screen==='access'||state.recoverySending||state.withdrawalSending;
     back.querySelector('.pb-nav-tip').textContent=state.screen==='done'?'Rever escolhas':state.busy?'Cancelar e voltar':'Voltar';
     syncForward();
     back.setAttribute('aria-label',state.screen==='done'?'Rever escolhas':state.busy?'Cancelar espera e voltar':'Voltar à decisão anterior');
@@ -62,7 +62,7 @@
     const icon=typeof w.icon==='string'&&w.icon.length<200000&&/^data:image\/(png|jpeg|webp|svg\+xml)[;,]/i.test(w.icon)?w.icon:({rabby:'assets/wallets/rabby.svg',phantom:'assets/wallets/phantom.svg',metamask:'assets/wallets/metamask.svg',coinbase:'assets/wallets/coinbase.svg',brave:'assets/wallets/brave.svg'})[w.brand]??'';
     return `<span class="pb-wallet-icon" aria-hidden="true">${icon?`<img src="${escape(icon)}" alt="" width="36" height="36">`:marks?.ui.wallet??'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M16 11h5v5h-5a2.5 2.5 0 0 1 0-5Z"/></svg>'}</span>`;
   }
-  function isWalletChoiceScreen(){return state.screen==='connect-source'||state.screen==='fees'&&!state.payer;}
+  function isWalletChoiceScreen(){return state.screen==='connect-source'||['connect-payer','fees'].includes(state.screen)&&!state.payer;}
   function walletBrand(provider,info={}){
     const domains={'io.rabby':'rabby','io.metamask':'metamask','app.phantom':'phantom','com.coinbase.wallet':'coinbase','com.brave.wallet':'brave'};
     if(info.rdns)return domains[info.rdns]??'rdns:'+info.rdns;
@@ -105,13 +105,13 @@
     for(const ms of [250,1000,3000])later(()=>{if(isWalletChoiceScreen())refreshWalletDiscovery();},ms);
   }
   function walletChoices(forSource=false){
-    if(state.walletConnect)return `<div class="pb-qr-wallet">${state.walletConnect.qr?`<img class="pb-wallet-qr" src="${escape(state.walletConnect.qr)}" width="288" height="288" alt="QR code WalletConnect"><p class="pb-note">Escaneie com sua carteira ou abra neste dispositivo.</p><div class="pb-actions"><a class="pb-primary pb-open-wallet" href="${escape(state.walletConnect.uri)}">Abrir carteira</a><button class="pb-link" data-action="copy-qr">Copiar conexão</button></div>`:'<p role="status">Preparando o QR code…</p><div class="pb-mini-track"><div class="pb-mini-fill pb-indeterminate" style="width:30%"></div></div>'}<button class="pb-link" data-action="cancel-qr">Cancelar conexão</button></div>`;
+    if(state.walletConnect)return `<div class="pb-qr-wallet">${state.walletConnect.qr?`<img class="pb-wallet-qr" src="${escape(state.walletConnect.qr)}" width="288" height="288" alt="QR code WalletConnect"><p class="pb-note">Escaneie o QR code com sua carteira no celular.</p>`:'<p role="status">Preparando o QR code…</p><div class="pb-mini-track"><div class="pb-mini-fill pb-indeterminate" style="width:30%"></div></div>'}<button class="pb-link" data-action="cancel-qr">Cancelar conexão</button></div>`;
     collectInjectedWallets();
     return `<div class="pb-wallet-options">${[...providers].filter(([id])=>id!=='walletconnect').sort(([,a],[,b])=>Number(a.name==='Carteira do navegador')-Number(b.name==='Carteira do navegador')).map(([id,w])=>`<button type="button" class="pb-choice pb-wallet-choice" ${forSource?'data-source-provider':'data-provider'}="${escape(id)}" ${state.busy?'disabled':''}>${walletIcon(w)}<span><strong>${escape(w.name)}</strong><small>${forSource?'Conectar para encontrar sua conta':'Conectar para pagar as taxas'}</small></span></button>`).join('')}<button type="button" class="pb-choice pb-wallet-choice" data-action="walletconnect" data-source="${forSource?'yes':'no'}" ${state.busy?'disabled':''}><span class="pb-wallet-icon pb-walletconnect-icon" aria-hidden="true"><svg viewBox="0 0 32 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8a15 15 0 0 1 22 0M2 13l7 7 7-7 7 7 7-7"/></svg></span><span><strong>Outra carteira</strong><small>Conectar com QR code · WalletConnect</small></span></button></div>${![...providers.keys()].some(id=>id!=='walletconnect')?'<p class="pb-note">Nenhuma extensão detectada neste navegador ainda. <button type="button" class="pb-link" data-action="find-wallets">Buscar carteiras instaladas</button></p>':''}`;
   }
   async function connectQr(forSource){
     if(state.busy)return;const epoch=state.epoch;state.busy=true;state.error='';state.walletConnect={};walletConnectAbort=new AbortController();const signal=AbortSignal.any([walletConnectAbort.signal,AbortSignal.timeout(180000)]);render();
-    try{const {connectQrWallet}=await import('./runtime/guided-wallet.js');if(epoch!==state.epoch)return;const provider=await connectQrWallet(signal,(uri,qr)=>{if(epoch===state.epoch){state.walletConnect={uri,qr};render();}});if(epoch!==state.epoch){void provider.disconnect();return;}
+    try{const {connectQrWallet}=await import('./runtime/guided-wallet.js');if(epoch!==state.epoch)return;const provider=await connectQrWallet(signal,(uri,qr)=>{if(epoch===state.epoch){state.walletConnect={qr};render();}});if(epoch!==state.epoch){void provider.disconnect();return;}
       walletConnectAbort=undefined;state.walletConnect=undefined;state.busy=false;
       // Connection already authorized via QR. Reuse the same account checks as extensions.
       const wrapped={request:args=>args.method==='eth_requestAccounts'?Promise.resolve(provider.accounts):provider.request(args),on:(...args)=>provider.on(...args),removeListener:(...args)=>provider.removeListener(...args)};
@@ -126,7 +126,7 @@
     const missing=unresolved()[0];
     if(missing){
       const failed=gasFor(missing.id)?.status!=='empty',symbol=missing.symbol==='XDAI'?'xDAI':missing.symbol;
-      return `<section class="pb-gas-step"><div class="pb-gas-context">${chain(missing)}<span>${escape(missing.name)}</span><span class="pb-gas-meta">${missing.items.length} ativos selecionados</span></div><h2>${failed?'Vamos conferir as taxas?':'Adicionar saldo agora?'}</h2><p class="pb-lead">${failed?'Não conseguimos consultar o saldo desta rede. Tente novamente ou deixe esta rede para depois.':`Para retirar na ${escape(missing.name)}, a carteira que paga as taxas precisa de ${escape(symbol)}.`}</p><div class="pb-payer-compact"><div><span class="pb-gas-label">Carteira para as taxas · ${escape(state.walletName)}</span><details><summary>${escape(short(state.payer))}</summary><p class="pb-source-address">${escape(state.payer)}</p></details></div><button type="button" class="pb-link" data-action="change-wallet">Trocar</button>${!failed?`<span class="pb-gas-balance">0 ${escape(symbol)}</span>`:''}</div><div class="pb-decision-options"><button type="button" class="pb-decision" data-action="${failed?'retry-gas':'fund'}"><span>${failed?'Conferir novamente':`Adicionar ${escape(symbol)}`}</span></button><button type="button" class="pb-decision" data-action="skip"><span>Pular esta rede por enquanto</span></button></div><p class="pb-note">Se deixar para depois, os ${missing.items.length} ativos desta rede continuam na sua Safe.</p></section>`;
+      return `<section class="pb-gas-step"><div class="pb-gas-context">${chain(missing)}<span>${escape(missing.name)}</span><span class="pb-gas-meta">${missing.items.length} ativos selecionados</span></div><h2>${failed?'Vamos conferir as taxas?':'Adicionar saldo agora?'}</h2><p class="pb-lead">${failed?'Não conseguimos consultar o saldo desta rede. Tente novamente ou deixe esta rede para depois.':`Para retirar na ${escape(missing.name)}, a carteira que paga as taxas precisa de ${escape(symbol)}.`}</p><div class="pb-payer-compact"><div><span class="pb-gas-label">Carteira para as taxas · ${escape(state.walletName)}</span><details><summary>${escape(short(state.payer))}</summary><p class="pb-source-address">${escape(state.payer)}</p></details></div><button type="button" class="pb-link" data-action="change-wallet">Trocar</button>${!failed?`<span class="pb-gas-balance">${nativeAmount(gasFor(missing.id)?.balance??0n)} ${escape(symbol)}</span>`:''}</div><div class="pb-decision-options"><button type="button" class="pb-decision" data-action="${failed?'retry-gas':'fund'}"><span>${failed?'Conferir novamente':`Adicionar ${escape(symbol)}`}</span></button><button type="button" class="pb-decision" data-action="skip"><span>Pular esta rede por enquanto</span></button></div><p class="pb-note">Se deixar para depois, os ${missing.items.length} ativos desta rede continuam na sua Safe.</p></section>`;
     }
     return eyebrow('Saldo para taxas encontrado')+`<h2>Há saldo para taxas.</h2><p class="pb-lead">Encontramos moeda nativa nas ${selected().length} redes selecionadas. O custo final precisa ser estimado antes de enviar.</p>${walletLine()}<details><summary>Ver saldos para taxas</summary>${selected().map(n=>`<p>${escape(n.name)} · ${nativeAmount(state.gas[n.id].balance)} ${escape(n.symbol)}</p>`).join('')}</details>${action('Escolher destino')}`;
   }
@@ -136,7 +136,7 @@
     const focusedWallet=scene.contains?.(document.activeElement)&&document.activeElement?.dataset?.sourceProvider||scene.contains?.(document.activeElement)&&document.activeElement?.dataset?.provider;
     const restoreFocus=scene.contains?.(document.activeElement);
     chrome();
-    if(state.screen==='access')scene.innerHTML=eyebrow('Recupere sua conta')+`<h2>Como você quer<br>recuperar sua conta?</h2><p class="pb-lead">Escolha o que você tem em mãos.</p><div class="pb-choices"><button type="button" class="pb-choice" data-method="wallet"><span class="pb-choice-head">${marks?.ui.wallet??''}</span><span><strong>Com uma carteira</strong><small>Uma carteira vinculada à sua conta</small></span></button><button type="button" class="pb-choice" data-method="passkey"><span class="pb-choice-head">${marks?.ui['key-round']??''}</span><span><strong>Com uma passkey</strong><small>Digital, Face ID ou gerenciador de senhas. Você também precisará de uma carteira para pagar as taxas.</small></span></button></div><details class="pb-magic-help"><summary>Entrava com e-mail?</summary><p>Exporte sua carteira pela Magic, importe em uma carteira externa e volte para escolher “Com uma carteira”.</p><p class="pb-note">O link da Picnic na Magic ainda não está confirmado nesta prévia.</p></details><p class="pb-note">A identificação e a recuperação de acesso são reais. A retirada continua demonstrativa.</p>`;
+    if(state.screen==='access')scene.innerHTML=eyebrow('Recupere sua conta')+`<h2>Como você quer<br>recuperar sua conta?</h2><p class="pb-lead">Escolha o que você tem em mãos.</p><div class="pb-choices"><button type="button" class="pb-choice" data-method="wallet"><span class="pb-choice-head">${marks?.ui.wallet??''}</span><span><strong>Com uma carteira</strong><small>Uma carteira vinculada à sua conta</small></span></button><button type="button" class="pb-choice" data-method="passkey"><span class="pb-choice-head">${marks?.ui['key-round']??''}</span><span><strong>Com uma passkey</strong><small>Digital, Face ID ou gerenciador de senhas. Você também precisará de uma carteira para pagar as taxas.</small></span></button></div><details class="pb-magic-help"><summary>Entrava com e-mail?</summary><p>Exporte sua carteira pela Magic, importe em uma carteira externa e volte para escolher “Com uma carteira”.</p><p class="pb-note">O link da Picnic na Magic ainda não está confirmado nesta prévia.</p></details><p class="pb-note">Você confirma as autorizações e transações na sua passkey ou carteira.</p>`;
     if(state.screen==='connect-source')scene.innerHTML=eyebrow('Acesso · carteira externa')+`<h2>Qual carteira você quer usar?</h2><p class="pb-lead">Conecte a carteira vinculada à sua conta Picnic. Vamos procurar suas contas e seus ativos.</p>${walletChoices(true)}${state.busy?'<p role="status" class="pb-note">Confirme a conexão na carteira. Você pode cancelar aqui enquanto espera.</p>':''}<p class="pb-note">A conexão compartilha seu endereço. Não pede assinatura.</p>`;
     if(state.screen==='discover'||state.screen==='scan')scene.innerHTML=eyebrow(state.screen==='discover'?'Identificando sua conta':'Consultando os ativos')+`<h2>${state.screen==='discover'?'Procurando sua conta.':'Buscando seus ativos.'}</h2><p class="pb-lead">${state.screen==='discover'?'Verificando as contas vinculadas à carteira que você conectou.':'Consultando todas as redes da Safe identificada.'}</p><p class="pb-source-address">${escape(state.screen==='discover'?state.sourceWallet:source)}</p><div class="pb-mini-track" role="progressbar" aria-label="Consulta das redes" ${state.screen==='scan'?`aria-valuenow="${state.scanDone}" aria-valuemax="${state.scanTotal}" aria-valuemin="0"`:''}><div class="pb-mini-fill ${state.screen==='discover'?'pb-indeterminate':''}" style="width:${state.screen==='discover'?30:100*state.scanDone/state.scanTotal}%"></div></div><p class="pb-status" role="status">${state.screen==='discover'?'A descoberta pode levar alguns minutos. Você pode cancelar e voltar.':`${state.scanDone} de ${state.scanTotal} redes consultadas`}</p>`;
     if(state.screen==='check-access')scene.innerHTML=eyebrow('Acesso')+`<h2>Conferindo quem controla a conta.</h2><p class="pb-lead">Vamos verificar se esta carteira já pode autorizar a retirada.</p><p class="pb-source-address">${escape(source)}</p><div class="pb-mini-track" role="progressbar" aria-label="Verificando acesso"><div class="pb-mini-fill pb-indeterminate" style="width:30%"></div></div>`;
@@ -158,6 +158,7 @@
       scene.innerHTML=eyebrow(source?`Safe consultada · ${short(source)}`:'Consulta indisponível')+`<h2>O que você quer levar?</h2><p class="pb-lead">${inventory?`${available.reduce((sum,n)=>sum+n.items.length,0)} ativos em ${available.length} redes. Tudo vem selecionado.`:'Os dados reais ainda não foram carregados. Atualize após concluir a consulta.'}</p><div class="pb-networks">${visible.map(networkAssets).join('')}</div>${problems.length?'<p class="pb-error">Algumas redes ficaram incompletas. Expanda a rede para ver os saldos encontrados e o que faltou consultar.</p>':''}${action('Levar '+count()+' ativos',!count())}${!available.length?'<p class="pb-note">Nenhum ativo confirmado nesta consulta. Você pode repetir a consulta ou voltar e escolher outra conta.</p><button class="pb-link" data-action="retry-assets">Consultar novamente</button>':''}<details><summary>Endereço e detalhes da consulta</summary><p class="pb-source-address">${escape(source)}</p>${source?'<button type="button" class="pb-link" data-action="copy-source">Copiar endereço da Safe</button>':''}${state.discoveryIssues.length?'<p>A descoberta de contas ficou parcial. Outras contas podem não ter sido encontradas.</p>':''}<p>Consulta: ${inventory?escape(new Date(inventory.checkedAt).toLocaleString('pt-BR')):'pendente'}. Saldos registrados nesse momento.</p>${networks.map(n=>`<p>${escape(n.name)} · ${n.status==='complete'?n.items.length?'consultada':'nenhum saldo encontrado no catálogo':'consulta incompleta'}${n.block?` · bloco ${escape(n.block)}`:''}</p>`).join('')}</details>`;
     }
     if(state.screen==='destination')scene.innerHTML=eyebrow('Destino')+`<h2>Pra onde vamos levar?</h2><p class="pb-lead">Cole o endereço da carteira que vai receber os ativos.<br>É nela que você vai receber os ativos.</p><form><label class="pb-field" for="pb-recipient">Endereço da carteira de destino</label><input id="pb-recipient" class="pb-address" autocomplete="off" spellcheck="false" placeholder="0x…" value="${escape(state.destination)}" aria-describedby="pb-destination-error"><p id="pb-destination-error" class="pb-error" role="alert" ${!state.destination||validDestination()?'hidden':''}>${state.destination?escape(destinationError()):''}</p>${action('Continuar',!validDestination())}</form><p class="pb-note">Pode ser a mesma carteira que paga as taxas. O destino deve ser diferente da Safe de origem.</p>`;
+    if(state.screen==='connect-payer')scene.innerHTML=hasPayer()?eyebrow('Carteira para as taxas')+`<h2>Esta carteira paga as taxas.</h2><p class="pb-lead">Sua passkey continua controlando a conta. A carteira conectada paga as taxas da retirada.</p>${walletLine()}${action('Continuar')}`:fees();
     if(state.screen==='fees')scene.innerHTML=fees();
     if(state.screen==='fund'){
       const n=networks.find(n=>n.id===state.funding),symbol=n.symbol==='XDAI'?'xDAI':n.symbol;
@@ -165,16 +166,18 @@
     }
     if(state.screen==='skipped')scene.innerHTML=eyebrow('Nenhuma rede selecionada')+`<h2>Tudo continua<br>na sua Safe.</h2><p class="pb-lead">Você pulou todas as redes. Nenhum ativo foi retirado. Pode voltar e escolher quais quer preparar.</p>${action('Rever redes')}`;
     if(state.screen==='move'){
-      const n=selected()[state.sent];
-      scene.innerHTML=eyebrow(`Prévia da retirada · rede ${state.sent+1} de ${selected().length}`)+`<h2>${state.sent?'Vamos para a próxima.':'Uma etapa por vez.'}</h2><p class="pb-lead">Cada lote pede uma confirmação na carteira. Uma rede pode precisar de várias transações.</p><div class="pb-tx"><div class="pb-tx-head">${chain(n)}<span>${escape(n.name)}</span><small>Prévia</small></div><div class="pb-tx-body"><strong>${n.items.length} ativos selecionados</strong><span>Destino ${escape(short(state.destination))}</span></div><div class="pb-tx-progress"><div class="pb-mini-track" role="progressbar" aria-label="Prévia desta etapa" aria-valuemin="0" aria-valuemax="3" aria-valuenow="1"><div class="pb-mini-fill" style="width:33%"></div></div><p class="pb-status" role="status">Os lotes reais ainda precisam ser montados e simulados.</p></div></div>${action('Demonstrar esta etapa')}<p class="pb-note">Nenhuma assinatura ou transação será solicitada nesta prévia.</p>`;
+      const n=selected()[state.sent],w=state.withdrawal;
+      const label=state.busy?'Aguarde…':w?.status==='ready'?(w.label??'Retirar ativos'):w?.status==='pending'?'Conferir recibo':w?.status==='confirmed'?'Continuar':w?.status==='empty'?'Próxima rede':'Conferir novamente';
+      scene.innerHTML=eyebrow(`Retirada · rede ${state.sent+1} de ${selected().length}`)+`<div class="pb-gas-context">${chain(n)}<span>${escape(n.name)}</span></div><h2>${w?.status==='confirmed'?(w.queued?'Retirada do cartão solicitada.':'Transação confirmada.'):w?.status==='pending'?'Confira a transação enviada.':w?.status==='blocked'?'Alguns ativos precisam esperar.':w?.status==='empty'?'Nada mais para retirar agora.':'Vamos retirar seus ativos.'}</h2><p class="pb-lead">${w?.status==='confirmed'?(w.queued?'O cartão ainda precisa cumprir o prazo on-chain. Depois, confirme a liberação.':'O recibo desta transação foi verificado na blockchain.'):w?.status==='ready'?`${w.count} ativo(s) nesta transação${w.parts>1?` · ${w.parts} transações previstas nesta rede`:''}.`:escape(w?.message??'Preparando os ativos selecionados…')}</p><p class="pb-note">Destino: <span class="pb-source-address">${escape(w?.destination??state.destination)}</span></p>${w?.entries?.length?`<details><summary>Ver ativos desta etapa</summary>${w.entries.map(e=>`<p>${escape(e.label)}${e.outcome==='queued'?' · aguarda liberação do cartão':e.outcome==='shares'?' · transferência das cotas':e.outcome==='basket'?' · BRL e propriedade da cesta':''}</p>`).join('')}</details>`:''}${w?.notes?.length?`<p class="pb-note">${w.notes.map(escape).join(' ')}</p>`:''}${w?.hash?`<p class="pb-source-address">${escape(w.hash)}</p>`:''}${state.busy?`<div class="pb-mini-track"><div class="pb-mini-fill pb-indeterminate" style="width:30%"></div></div><p class="pb-status" role="status">${escape(state.withdrawalMessage)}</p>`:''}${action(label,state.busy)}${!state.busy&&w?.status==='blocked'?'<button class="pb-link" data-action="defer-withdrawal">Deixar esta rede para depois</button>':''}<p class="pb-note">${w?.status==='ready'?(state.method==='passkey'?'Autorize com a passkey e confirme o envio na carteira que paga as taxas.':'Confirme esta retirada na sua carteira.'):''}</p>`;
     }
-    if(state.screen==='done')scene.innerHTML=`<div class="pb-done-mark" aria-hidden="true">✓</div>${eyebrow('Prévia concluída')}<h2>Prévia concluída.<br>Nada foi enviado.</h2><p class="pb-lead">${count()} ativos selecionados · ${selected().length} redes percorridas na demonstração.</p><div class="pb-wallet-line"><span>Destino escolhido<small>${escape(state.destination)}</small></span><span class="pb-check">✓</span></div>${state.skipped.size?`<p class="pb-note">Redes puladas: ${available.filter(n=>state.skipped.has(n.id)).map(n=>escape(n.name)).join(', ')}.</p>`:''}<p class="pb-note">Todos os saldos continuam na origem.</p>${action('Recomeçar a prévia')}`;
+    if(state.screen==='done')scene.innerHTML=`<div class="pb-done-mark" aria-hidden="true">✓</div>${eyebrow('Etapas concluídas')}<h2>${state.withdrawalDeferred.length||state.skipped.size?'Concluímos as etapas disponíveis.':state.withdrawalReceipts.length?'Retiradas confirmadas.':'Nenhuma retirada foi necessária.'}</h2><p class="pb-lead">${state.withdrawalReceipts.length} transação(ões) confirmada(s) nesta sessão.</p><div class="pb-wallet-line"><span>Destino escolhido<small>${escape(state.destination)}</small></span></div>${state.withdrawalDeferred.length||state.skipped.size?'<p class="pb-note">Há redes ou ativos deixados para depois. Eles continuam na origem; solicitações com prazo ainda precisam ser finalizadas.</p>':''}${action('Consultar novamente')}`;
     if(state.recoveryExcluded.size&&['recovery-owner','recovery-network'].includes(state.screen)&&state.recovery?.complete)scene.insertAdjacentHTML('beforeend',`<details><summary>${state.recoveryExcluded.size} rede(s) deixada(s) para depois</summary><p>A recuperação não será executada nessas redes.</p><button class="pb-link" data-action="restore-recovery-checks" ${state.busy?'disabled':''}>Retomar verificação</button></details>`);
     if(state.error)scene.insertAdjacentHTML('beforeend',`<p class="pb-error" role="alert">${escape(state.error)}</p>`);
     const heading=scene.querySelector('h2');heading?.setAttribute('tabindex','-1');
     if(restoreFocus&&isWalletChoiceScreen()&&focusedWallet){scene.querySelectorAll?.('button').forEach(button=>{if(button.dataset.sourceProvider===focusedWallet||button.dataset.provider===focusedWallet)button.focus({preventScroll:true});});}else if(restoreFocus&&!isWalletChoiceScreen())heading?.focus({preventScroll:true});
   }
   function guard(screen){
+    if(screen==='connect-payer'&&(!state.passkeyReady||!source||!state.candidates.some(a=>a.toLowerCase()===source.toLowerCase())))return 'access';
     if(['assets','fees','fund','destination','move','done'].includes(screen)&&!inventory)return state.method==='wallet'?'connect-source':'access';
     if(['assets','fees','fund','destination','move','done'].includes(screen)&&state.method==='wallet'&&!externalAccessReady())return 'recover-access';
     if(screen==='fund'&&!canFund())return 'fees';
@@ -190,11 +193,11 @@
     if(isWalletChoiceScreen())beginWalletDiscovery();
   }
   function goBack(){
-    if(back.disabled||state.recoverySending)return;
+    if(back.disabled||state.recoverySending||state.withdrawalSending)return;
     if(state.screen==='done'){history.length=0;state.sent=0;go('assets',false);return;}
     let previous=history.pop();
     while(previous&&previous.screen===state.screen&&!previous.restoreNetwork&&previous.recoveryIndex===undefined)previous=history.pop();
-    let target=previous?.screen??({'check-access':'connect-source','recovery-loading':'recover-access','recovery-owner':'recover-access','recovery-overview':'recover-access','recovery-network':'recovery-owner','recover-access':'connect-source','passkey-discover':'access','passkey-confirm':'access','connect-source':'access',discover:'connect-source',scan:'connect-source',account:'connect-source','no-account':'connect-source',assets:state.method==='wallet'?'connect-source':'access',fees:'assets',destination:'fees',fund:'fees',skipped:'assets',move:'destination'}[state.screen]??'access');
+    let target=previous?.screen??({'check-access':'connect-source','recovery-loading':'recover-access','recovery-owner':'recover-access','recovery-overview':'recover-access','recovery-network':'recovery-owner','recover-access':'connect-source','passkey-discover':'access','passkey-confirm':'access','connect-source':'access','connect-payer':state.candidates.length>1?'account':'access',discover:'connect-source',scan:state.method==='passkey'?'connect-payer':'connect-source',account:'connect-source','no-account':'connect-source',assets:state.method==='wallet'?'connect-source':'connect-payer',fees:'assets',destination:'fees',fund:'fees',skipped:'assets',move:'destination'}[state.screen]??'access');
     if(state.recoveryTarget&&['passkey-discover','passkey-confirm'].includes(state.screen)){source=state.recoveryTarget;state.candidates=[source];target='recover-access';}
     if(['destination','move'].includes(target)&&(!state.payer||unresolved().length))target=state.screen==='fees'?'assets':'fees';
     if(previous?.recoveryIndex!==undefined)state.recoveryIndex=previous.recoveryIndex;
@@ -232,11 +235,16 @@
   async function connectWallet(id){
     const choice=providers.get(id);if(!choice||state.busy)return;const epoch=state.epoch;state.busy=true;state.error='';render();
     try{const accounts=await requestWallet(choice.provider);if(state.epoch!==epoch)return;if(!Array.isArray(accounts)||!/^0x[a-f0-9]{40}$/i.test(accounts[0]??'')||/^0x0{39}[01]$/i.test(accounts[0]))throw Error('A carteira não informou um endereço válido.');detachWallet();state.provider=choice.provider;state.payer=accounts[0];state.walletName=choice.name;state.gas={};
-      const changed=()=>{if(state.provider!==choice.provider)return;detachWallet();state.provider=undefined;state.payer='';state.gas={};go('fees',false);state.error='A conta conectada mudou. Reconecte para conferir o endereço e as taxas.';render();};
+      const changed=()=>{if(state.provider!==choice.provider)return;detachWallet();state.provider=undefined;state.payer='';state.gas={};go(state.method==='passkey'&&!inventory?'connect-payer':'fees',false);state.error='A conta conectada mudou. Reconecte para conferir o endereço e as taxas.';render();};
       choice.provider.on?.('accountsChanged',changed);choice.provider.on?.('disconnect',changed);
       detachWallet=()=>{choice.provider.removeListener?.('accountsChanged',changed);choice.provider.removeListener?.('disconnect',changed);};
-      state.busy=false;await checkGas();
+      state.busy=false;if(state.screen==='connect-payer'){await continueAfterPayer();}else await checkGas();
     }catch(error){if(state.epoch===epoch){state.busy=false;state.error=error.code===4001?'Conexão cancelada. Você pode tentar novamente.':error.message;render();}}
+  }
+  async function continueAfterPayer(){
+    const epoch=state.epoch;state.busy=true;render();
+    try{await activePayer();if(epoch!==state.epoch)return;state.busy=false;if(inventory)go('assets',false);else await scanSource(source);}
+    catch(error){if(epoch===state.epoch){detachWallet();state.provider=undefined;state.payer='';state.gas={};go('connect-payer',false);state.error=error.message;render();}}
   }
   function dropPayer(message){detachWallet();state.provider=undefined;state.payer='';state.walletName='';state.gas={};state.funding=undefined;go('fees',false);state.error=message;render();}
   function animateChoice(button,fn){
@@ -244,19 +252,54 @@
     later(()=>{root.classList.remove('pb-answer-leaving');state.busy=false;fn();root.classList.add('pb-answer-entering');},window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?0:180);
   }
   async function openFunding(button){
-    const n=unresolved()[0];if(!n||gasFor(n.id)?.status!=='empty'||!hasPayer())return;const epoch=state.epoch;state.busy=true;chrome();
+    const n=unresolved()[0];if(!n||!['empty','insufficient'].includes(gasFor(n.id)?.status)||!hasPayer())return;const epoch=state.epoch;state.busy=true;chrome();
     try{await activePayer();if(epoch!==state.epoch)return;state.busy=false;state.funding=n.id;animateChoice(button,()=>go('fund'));}catch(error){if(epoch===state.epoch)dropPayer(error.message);}
   }
   async function advanceVerified(target){
     const epoch=state.epoch;state.busy=true;chrome();
     try{await verifySource();}catch(error){if(epoch===state.epoch){if(state.method==='wallet')changedSource();else{restart();state.error=error.message;render();}}return;}
     if(epoch!==state.epoch)return;
-    try{await activePayer();if(epoch!==state.epoch)return;state.busy=false;go(target);}catch(error){if(epoch===state.epoch)dropPayer(error.message);}
+    try{await activePayer();if(epoch!==state.epoch)return;state.busy=false;go(target);if(target==='move')void prepareWithdrawal();}catch(error){if(epoch===state.epoch)dropPayer(error.message);}
   }
   function skipNetwork(){const n=state.screen==='fund'?networks.find(n=>n.id===state.funding):unresolved()[0];if(!n)return;history.push({screen:'fees',restoreNetwork:n.id});state.selected.delete(n.id);state.skipped.add(n.id);go(selected().length?'fees':'skipped',false);}
-  function demonstrate(){state.busy=true;chrome();const button=scene.querySelector('[data-action=next]'),status=scene.querySelector('.pb-status'),bar=scene.querySelector('.pb-mini-fill'),meter=scene.querySelector('[role=progressbar]');button.disabled=true;button.textContent='Demonstrando…';scene.querySelector('.pb-enter').hidden=true;status.textContent='Exemplo: aguardando confirmação na carteira';later(()=>{status.textContent='Exemplo: aguardando confirmação da rede';bar.style.width='67%';meter.setAttribute('aria-valuenow','2');},1000);later(()=>{status.textContent='Exemplo: etapa concluída ✓';bar.style.width='100%';meter.setAttribute('aria-valuenow','3');state.sent++;chrome();later(()=>go(state.sent>=selected().length?'done':'move'),550);},2200);}
+  function withdrawalIds(){const n=selected()[state.sent],done=state.withdrawalDone[n.id]??[];return n.items.filter(i=>!done.includes(i.id)).map(i=>i.id);}
+  async function prepareWithdrawal(){
+    if(state.busy)return;const n=selected()[state.sent],ids=withdrawalIds();
+    if(!ids.length){state.withdrawal={status:'empty'};render();return;}
+    cancel();state.busy=true;state.withdrawal=undefined;state.withdrawalMessage='Atualizando saldos e simulando as rotas…';render();const epoch=state.epoch;sourceAbort=new AbortController();
+    try{await verifySource();await activePayer();if(epoch!==state.epoch)return;const api=window.picnicGuidedDiscovery?.withdrawal;if(!api)throw Error('O módulo de retirada não carregou. Atualize a página.');const value=await api.prepare({account:source,chainId:n.chainId,payer:state.payer,destination:state.destination,method:state.method,ids},sourceAbort.signal);if(epoch!==state.epoch)return;state.withdrawal=value;}
+    catch(error){if(epoch===state.epoch){state.error=error.message;state.withdrawal=error.pendingHash?{status:'pending',hash:error.pendingHash,message:'Transação enviada. Confira o recibo antes de continuar.'}:{status:'error'};}}
+    finally{if(epoch===state.epoch){state.busy=false;render();}}
+  }
+  async function executeWithdrawal(checkReceipt=false){
+    if(state.busy)return;const n=selected()[state.sent],id=state.withdrawal?.id;
+    if(!checkReceipt&&!id)return;
+    cancel();state.busy=true;state.withdrawalSending=true;state.error='';state.withdrawalMessage=checkReceipt?'Consultando o recibo…':'Preparando a autorização…';render();const epoch=state.epoch;sourceAbort=new AbortController();
+    try{
+      await verifySource();await activePayer();if(epoch!==state.epoch)return;
+      const api=window.picnicGuidedDiscovery.withdrawal;
+      const result=checkReceipt?await api.receipt(source,n.chainId,sourceAbort.signal):await api.execute(id,state.provider,sourceAbort.signal,message=>{if(epoch===state.epoch){state.withdrawalMessage=message;render();}});
+      if(epoch!==state.epoch)return;
+      if(!result.destination||result.destination.toLowerCase()===state.destination.toLowerCase())state.withdrawalDone[n.id]=[...new Set([...(state.withdrawalDone[n.id]??[]),...result.completed])];
+      if(!state.withdrawalReceipts.some(r=>r.hash===result.hash))state.withdrawalReceipts.push(result);
+      state.withdrawal={status:'confirmed',...result};
+    }catch(error){if(epoch===state.epoch){if(error.code==='INSUFFICIENT_GAS'){state.gas[n.id]={status:'insufficient',balance:BigInt(error.balance),payer:state.payer};state.withdrawalSending=false;go('fees',false);state.error=error.message;render();return;}state.error=error.message;state.withdrawal=error.pendingHash?{status:'pending',hash:error.pendingHash,message:'Transação enviada. Confira o recibo antes de continuar.'}:{status:'error'};}}
+    finally{state.withdrawalSending=false;if(epoch===state.epoch){state.busy=false;render();}}
+  }
+  function nextWithdrawalNetwork(deferred=false){
+    if(deferred)state.withdrawalDeferred.push(selected()[state.sent].id);
+    state.sent++;state.withdrawal=undefined;
+    if(state.sent>=selected().length)go('done',false);else{go('move',false);void prepareWithdrawal();}
+  }
   function setInventory(value){expandedAssets.clear();inventory=value;networks=value?.networks??[];available=networks.filter(n=>n.items.length);source=value?.account;state.selected=new Set(available.map(n=>n.id));state.skipped.clear();}
-  function resetSession(){detachSource();detachSource=()=>{};detachWallet();state.provider=undefined;state.payer='';state.walletName='';state.sourceProvider=undefined;state.sourceWallet='';state.sourceName='';state.destination='';state.gas={};state.passkeyReady=false;state.accessCheck=undefined;state.recoveryTarget='';state.recovery=undefined;state.recoveryOwner='';state.recoveryIndex=0;state.recoverySkipped.clear();state.recoveryExcluded.clear();state.recoveryMessage='';window.picnicGuidedDiscovery?.resetPasskey?.();state.candidates=[];state.discoveryIssues=[];state.sent=0;state.funding=undefined;history.length=0;setInventory(undefined);}
+  async function retryCards(){
+    if(state.busy||!window.picnicGuidedDiscovery?.retryCards)return;
+    cancel();state.busy=true;state.error='';render();const epoch=state.epoch;sourceAbort=new AbortController();
+    try{await verifySource();const value=await window.picnicGuidedDiscovery.retryCards(source,sourceAbort.signal);if(epoch!==state.epoch)return;await verifySource();if(epoch!==state.epoch)return;const previous=new Set(networks.map(n=>n.id)),selection=new Set(state.selected);inventory=value;networks=value.networks;available=networks.filter(n=>n.items.length);state.selected=new Set(available.filter(n=>selection.has(n.id)||!previous.has(n.id)).map(n=>n.id));}
+    catch(error){if(epoch===state.epoch)state.error=error.message;}
+    finally{if(epoch===state.epoch){state.busy=false;render();}}
+  }
+  function resetSession(){detachSource();detachSource=()=>{};detachWallet();state.provider=undefined;state.payer='';state.walletName='';state.sourceProvider=undefined;state.sourceWallet='';state.sourceName='';state.destination='';state.gas={};state.passkeyReady=false;state.accessCheck=undefined;state.recoveryTarget='';state.recovery=undefined;state.recoveryOwner='';state.recoveryIndex=0;state.recoverySkipped.clear();state.recoveryExcluded.clear();state.recoveryMessage='';window.picnicGuidedDiscovery?.resetPasskey?.();state.candidates=[];state.discoveryIssues=[];state.sent=0;state.withdrawal=undefined;state.withdrawalDone={};state.withdrawalReceipts=[];state.withdrawalDeferred=[];state.funding=undefined;history.length=0;setInventory(undefined);}
   function restart(){resetSession();go('access',false);}
   function startMethod(method){resetSession();state.method=method;if(method==='passkey')void discoverWithPasskey();else go('connect-source');}
   function changedSource(){resetSession();state.method='wallet';go('connect-source',false);state.error='A carteira mudou. Conecte novamente para identificar sua conta e consultar os ativos.';render();}
@@ -276,8 +319,8 @@
   function externalAccessReady(){const c=state.accessCheck;return !!c?.ready&&c.account.toLowerCase()===source?.toLowerCase()&&c.wallet.toLowerCase()===state.sourceWallet.toLowerCase();}
   async function scanSource(account){
     if(!state.candidates.some(a=>a.toLowerCase()===account.toLowerCase()))return;
-    setInventory(undefined);source=account;state.accessCheck=undefined;state.scanDone=0;state.scanTotal=10;go(state.method==='wallet'?'check-access':'scan',state.screen==='account');state.busy=true;render();const epoch=state.epoch;sourceAbort=new AbortController();const signal=sourceAbort.signal;
-    try{await verifySource();if(signal.aborted)return;
+    setInventory(undefined);source=account;if(state.method==='passkey'&&state.passkeyReady&&!hasPayer()){go('connect-payer',state.screen==='account');return;}state.accessCheck=undefined;state.scanDone=0;state.scanTotal=10;go(state.method==='wallet'?'check-access':'scan',state.screen==='account'||state.screen==='connect-payer');state.busy=true;render();const epoch=state.epoch;sourceAbort=new AbortController();const signal=sourceAbort.signal;
+    try{await verifySource();if(state.method==='passkey')await activePayer();if(signal.aborted)return;
       if(state.method==='wallet'){
         const check=window.picnicGuidedDiscovery?.checkAccess;
         if(!check)throw Error('Não foi possível carregar a verificação de acesso. Atualize e tente novamente.');
@@ -345,17 +388,18 @@
   }
   async function next(){
     if(state.busy)return;
+    if(state.screen==='connect-payer'&&hasPayer()){await continueAfterPayer();return;}
     if(state.screen==='recovery-owner'&&!recoveryOwnerError()){await refreshRecovery();return;}
     if(state.screen==='assets'&&count()){go('fees');if(state.payer)void checkGas();}
     else if(state.screen==='fees'&&ready())await advanceVerified('destination');
-    else if(state.screen==='destination'&&validDestination()&&ready()){state.sent=0;await advanceVerified('move');}
+    else if(state.screen==='destination'&&validDestination()&&ready()){state.sent=0;state.withdrawalDone={};state.withdrawalDeferred=[];await advanceVerified('move');}
     else if(state.screen==='fund')void checkGas([state.funding]);
     else if(state.screen==='skipped')go('assets');
-    else if(state.screen==='move')demonstrate();
+    else if(state.screen==='move'){if(state.withdrawal?.status==='ready')await executeWithdrawal();else if(state.withdrawal?.status==='pending')await executeWithdrawal(true);else if(state.withdrawal?.status==='empty')nextWithdrawalNetwork();else await prepareWithdrawal();}
     else if(state.screen==='done')restart();
   }
   root.addEventListener('click',async event=>{
-    const target=event.target.closest('button');if(!target||target.disabled)return;if(target.dataset.action==='skip-incomplete-recovery'&&!state.recoverySending&&state.recovery?.incompleteNetworks?.length){for(const id of state.recovery.incompleteNetworks){state.recoveryExcluded.add(id);state.recoverySkipped.add(id);}cancel();state.busy=false;state.recoveryIndex=0;void refreshRecovery();return;}if(target.dataset.action==='copy-qr'){const uri=state.walletConnect?.uri;if(!uri)return;try{await navigator.clipboard.writeText(uri);target.textContent='Conexão copiada';}catch{target.textContent='Não foi possível copiar';}return;}if(target.dataset.action==='cancel-qr'){cancel();state.busy=false;render();return;}if(state.busy)return;
+    const target=event.target.closest('button');if(!target||target.disabled)return;if(target.dataset.action==='skip-incomplete-recovery'&&!state.recoverySending&&state.recovery?.incompleteNetworks?.length){for(const id of state.recovery.incompleteNetworks){state.recoveryExcluded.add(id);state.recoverySkipped.add(id);}cancel();state.busy=false;state.recoveryIndex=0;void refreshRecovery();return;}if(target.dataset.action==='cancel-qr'){cancel();state.busy=false;render();return;}if(state.busy)return;
     if(target.dataset.recoveryIndex!==undefined){state.recoveryIndex=Number(target.dataset.recoveryIndex);const entry=recoveryEntries()[state.recoveryIndex];if(entry){state.recoverySkipped.delete(entry.n.chainId);go('recovery-network');scheduleRecoveryRefresh();}return;}
     if(target.dataset.method){startMethod(target.dataset.method);return;}
     if(target.dataset.sourceProvider){void connectSource(target.dataset.sourceProvider);return;}
@@ -377,10 +421,12 @@
     if(a==='access-passkey'){state.recoveryTarget=source;void discoverWithPasskey();return;}
     if(a==='retry-discovery'){if(state.method==='passkey')void discoverWithPasskey();else void discoverSource();return;}
     if(a==='confirm-passkey'){void discoverWithPasskey(true);return;}
+    if(a==='defer-withdrawal'){nextWithdrawalNetwork(true);return;}
+    if(a==='retry-cards'){void retryCards();return;}
     if(a==='retry-assets'){void scanSource(source);return;}
     if(a==='change-source'){changedSource();return;}
     if(a==='next'){event.preventDefault();next();}
-    if(a==='change-wallet'){detachWallet();state.provider=undefined;state.payer='';state.gas={};go('fees',false);}
+    if(a==='change-wallet'){detachWallet();state.provider=undefined;state.payer='';state.gas={};go(state.screen==='connect-payer'?'connect-payer':'fees',false);}
     if(a==='copy-source'||a==='copy-payer'){try{const copyEpoch=state.epoch;if(a==='copy-payer')await activePayer();if(copyEpoch!==state.epoch)return;await navigator.clipboard.writeText(a==='copy-source'?source:state.payer);if(copyEpoch!==state.epoch)return;if(a==='copy-payer'){target.innerHTML=copiedIcon;target.setAttribute('aria-label','Endereço copiado');target.setAttribute('title','Copiado');scene.querySelector('.pb-copy-feedback').textContent='Endereço copiado';later(()=>{target.innerHTML=copyIcon;target.setAttribute('aria-label','Copiar endereço da carteira para taxas');target.setAttribute('title','Copiar endereço');},1600);}else target.textContent='Endereço copiado';}catch{if(a==='copy-payer'){dropPayer('Não foi possível confirmar a carteira para copiar o endereço. Reconecte.');}else{state.error='Não foi possível copiar. Selecione o endereço acima.';render();}}}
     if(a==='fund'){void openFunding(target);return;}
     if(a==='retry-gas'&&unresolved()[0])void checkGas([unresolved()[0].id]);

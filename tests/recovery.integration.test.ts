@@ -1,3 +1,4 @@
+import { discoverCards } from '../src/core/discovery';
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -155,6 +156,8 @@ describe("Independent recovery using deployed contract bytecode", () => {
     await publicClient.waitForTransactionReceipt({ hash: await wallet.writeContract({ account: accounts[0], address: delay, abi: parseAbi(["function enableModule(address module)"]), functionName: "enableModule", args: [safe] }) });
     const cardSnapshot = await inspectAccount(publicClient, card, foundry.id);
     await sendAction(publicClient, provider(0), safeAction(cardSnapshot, { to: card, value: 0n, data: encodeFunctionData({ abi: parseAbi(["function enableModule(address module)"]), functionName: "enableModule", args: [delay] }) }, "Enable card module in test"), () => {});
+    const foundCards = await discoverCards(new ReadPool(foundry, [{url:`http://127.0.0.1:${port}`,client:publicClient}], new AbortController().signal), safe);
+    expect(foundCards.addresses.map(a=>a.toLowerCase())).toContain(card.toLowerCase());expect(foundCards.issues).toEqual([]);
     await publicClient.waitForTransactionReceipt({ hash: await wallet.writeContract({ account: accounts[0], address: token, abi: parseAbi(["function mint(address to,uint256 amount)"]), functionName: "mint", args: [card, 500_000n] }) });
     let [state] = await inspectCard(publicClient, card, foundry.id);
     const controller = await inspectAccount(publicClient, safe, foundry.id);

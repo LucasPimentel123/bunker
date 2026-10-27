@@ -70,9 +70,14 @@ open biometric dialogs, or verify actual MetaMask/WalletConnect UI. Software tes
 credentials are not stored in the OS. Passing this suite is not a browser/device
 compatibility guarantee or an independent security audit.
 
-The guided withdrawal screen remains a demonstration. The final transfer in this
-test proves control at the contract layer; it does not imply that the guided
-withdrawal screen broadcasts transactions.
+The test now executes a real passkey-authorized token withdrawal before recovery,
+including passkey rejection, a lost receipt response, resuming the persisted
+receipt and blocking duplicate submission. After guardian recovery it drives the
+shipped guided withdrawal UI to send the test tokens and native coin in separate
+transactions and verifies balances and receipts. The passkey device prompt is
+replaced by a fresh software WebAuthn assertion; the contract signature and Safe
+execution are real. Networks without verified MultiSend use separate single-call
+transactions; dependent multi-call routes remain explicitly unavailable there.
 
 ## Complementary regressions
 
