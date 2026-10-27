@@ -3,8 +3,13 @@
 </p>
 
 <p align="center">
-  <strong>An independent way back to your Picnic account.</strong><br>
-  Open source · Runs locally · Your keys stay with you
+  <strong>Access your funds. Even without Picnic.</strong><br>
+  A last resort if Picnic is no longer available.<br>
+  Built so you have a way out—and hopefully never need one.
+</p>
+
+<p align="center">
+  <sub>Open source · Runs locally · Your keys stay with you</sub>
 </p>
 
 <p align="center">
