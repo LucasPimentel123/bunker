@@ -1,0 +1,55 @@
+import { assertionFrom, base64url, requestPasskey } from '../proof/passkey';
+import { discoveryChallenge, identifyPasskey } from '../proof/passkeyDiscovery';
+import { discoverCandidateAccounts, keyId, resolveDiscovery, startDiscovery, type DiscoverySession } from '../proof/discoveryFlow';
+import type { DiscoveryNetwork } from '../proof/discoverAccounts';
+import { BUNKER_ORIGIN, assertLocalBunker } from '../proof/localBunker';
+import { publicClient } from '../core/client';
+import { chainById } from '../catalog/chains';
+import { discoveryRpc, independentAccountHints } from '../core/ownerHistory';
+import networks from '../../extension/networks.json';
+
+type Progress = (message: string) => void;
+let pending: { session: DiscoverySession; networks: DiscoveryNetwork[] } | undefined;
+export function resetPasskey() { pending = undefined; }
+async function proof(signal: AbortSignal, credentialId?: string) {
+  assertLocalBunker(location.origin, window.isSecureContext);
+  signal.throwIfAborted();
+  const challenge = discoveryChallenge();
+  const credential = await requestPasskey(challenge, credentialId, BUNKER_ORIGIN, signal);
+  signal.throwIfAborted();
+  return { challenge, credentialId: base64url(new Uint8Array(credential.rawId)), assertion: assertionFrom(credential) };
+}
+async function lookup(session: DiscoverySession, signal: AbortSignal, progress: Progress) {
+  let done = 0;
+  const results = await Promise.all(networks.map(async network => {
+    const bounded = AbortSignal.any([signal, AbortSignal.timeout(180_000)]);
+    const client = publicClient(chainById(network.id), discoveryRpc(network.id), 20_000, bounded);
+    try {
+      const result = await discoverCandidateAccounts(client, network.id, session, BUNKER_ORIGIN,
+        (id, owner) => independentAccountHints(publicClient(chainById(id), discoveryRpc(id), 20_000, bounded), id, owner));
+      bounded.throwIfAborted();
+      return result;
+    } catch { signal.throwIfAborted(); return { chainId: network.id, accounts: [], issues: [`${network.name}: descoberta incompleta.`] }; }
+    finally { if (!signal.aborted) progress(`Passkey recebida · ${++done} de ${networks.length} redes verificadas`); }
+  }));
+  signal.throwIfAborted();
+  const resolution = resolveDiscovery(session, results);
+  pending = { session, networks: results };
+  const accounts = resolution.key ? results.flatMap(n => n.accounts).filter(a => keyId(a.publicKey) === keyId(resolution.key!)) : [];
+  return { addresses: [...new Set(accounts.map(a => a.diagnosis.snapshot.address))], issues: results.flatMap(n => n.issues), needsSecond: resolution.needsSecondAssertion };
+}
+export async function discoverPasskey(signal: AbortSignal, progress: Progress) {
+  pending = undefined;
+  progress('Confirme a passkey no seu dispositivo. Isso identifica a conta; não autoriza uma retirada.');
+  const session = startDiscovery(await proof(signal), BUNKER_ORIGIN);
+  progress('Passkey recebida. Verificando sua conta na blockchain…');
+  return lookup(session, signal, progress);
+}
+export async function confirmPasskey(signal: AbortSignal, progress: Progress) {
+  const previous = pending;
+  if (!previous || !resolveDiscovery(previous.session, previous.networks).needsSecondAssertion) throw new Error('Repita a identificação da passkey.');
+  const second = await proof(signal, previous.session.proof.credentialId);
+  const key = await identifyPasskey(previous.session.proof, second, BUNKER_ORIGIN);
+  if (!resolveDiscovery(previous.session, previous.networks).matches.some(k => keyId(k) === keyId(key))) throw new Error('A passkey não corresponde às contas encontradas.');
+  return lookup({ ...previous.session, proof: second, confirmedKey: key }, signal, progress);
+}

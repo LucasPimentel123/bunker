@@ -1,0 +1,59 @@
+{
+  "name": "@usepicnic/bunker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "overrides": {
+    "ws": "8.22.0",
+    "tmp": "0.2.7",
+    "decode-uri-component": "0.5.0",
+    "uuid@<11.1.1": "11.1.1",
+    "@walletconnect/logger": "3.0.2",
+    "zod": "4.6.7"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "check": "tsc -b",
+    "test": "vitest run",
+    "release:archive": "node scripts/package-release.mjs",
+    "test:fork": "vitest run --config vitest.forks.config.ts",
+    "demo": "node scripts/demo-chain.mjs",
+    "proof:build": "tsc -b && vite build --config vite.proof.config.ts",
+    "proof:certificate": "node scripts/proof/certificate.mjs",
+    "proof:serve": "node scripts/proof/server.mjs",
+    "proof:setup": "node scripts/proof/setup.mjs",
+    "proof:setup:test": "node --test scripts/proof/setup.test.mjs scripts/proof/server.test.mjs",
+    "extension:build": "tsc -b && vite build --config vite.extension.config.ts",
+    "extension:test": "vitest run tests/passkey-extension.test.ts tests/passkey-discovery.test.ts tests/passkey-proof.test.ts tests/passkey-proof.integration.test.ts && node --test scripts/extension/package.test.mjs",
+    "extension:package": "node scripts/extension/package.mjs",
+    "proof:test": "vitest run tests/passkey-proof.test.ts tests/passkey-proof.integration.test.ts && npm run proof:setup:test",
+    "bunker:build": "tsc -b && vite build --config vite.bunker.config.ts && vite build --config vite.guided.config.ts && vite build --config vite.guided-wallet.config.ts",
+    "bunker:setup": "PICNIC_PROOF_PROFILE=bunker node scripts/proof/setup.mjs",
+    "guided:build": "vite build --config vite.guided.config.ts && vite build --config vite.guided-wallet.config.ts",
+    "test:guided": "node --test tests/guided-flow.test.mjs",
+    "test:bunker:e2e": "npm run test:guided && vitest run tests/guided-access.test.ts tests/guided-passkey.test.ts tests/guided-wallet.test.ts tests/guided-recovery.test.ts tests/recovery-guardian.test.ts tests/recovery-preparation.test.ts tests/passkey-discovery.test.ts tests/passkey-proof.test.ts tests/passkey-proof.integration.test.ts tests/guided-recovery.integration.test.ts"
+  },
+  "dependencies": {
+    "@noble/curves": "1.9.1",
+    "@tanstack/react-query": "5.104.5",
+    "@walletconnect/ethereum-provider": "2.21.1",
+    "connectkit": "1.9.2",
+    "qrcode": "1.5.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "viem": "2.57.7",
+    "wagmi": "2.19.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.3",
+    "@types/react": "18.3.28",
+    "@types/react-dom": "18.3.7",
+    "solc": "0.8.37",
+    "typescript": "5.9.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
+  }
+}

@@ -1,0 +1,18 @@
+node_modules/
+dist/
+artifacts/
+test-results/
+playwright-report/
+.env*
+!.env.example
+.DS_Store
+.openai/
+
+*.tsbuildinfo
+
+# Local passkey proof: machine-specific TLS material, never package.
+.local-proof/
+proof-dist/
+extension-dist/
+
+bunker-dist/

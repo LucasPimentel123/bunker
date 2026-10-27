@@ -1,0 +1,8 @@
+main.bunker-workspace{max-width:1200px;padding:0 28px 56px}.bunker-workspace header{padding:18px 0}.bunker-workspace header span{color:#ccff00}.bunker-steps{display:flex;flex-direction:row;gap:12px;margin:20px 0}.bunker-steps button[aria-current=step]{background:#211d1a;color:#ccff00}.bunker-workspace input[type=checkbox]{width:18px;height:18px;display:inline-block;margin:0}.bunker-workspace .panel{margin:20px 0}.bunker-network{padding:18px 0;border-top:1px solid #daddd4}.bunker-network h3{display:flex;align-items:center;gap:10px}.bunker-batch{display:flex;flex-wrap:wrap;align-items:center;gap:14px;border:1px solid #daddd4;border-radius:8px;padding:12px;margin:12px 0}.bunker-batch details{flex:1}.bunker-back{margin:12px 28px}.bunker-workspace .gas-wallet{background:#fff;padding:18px;border:1px solid #daddd4;border-radius:8px}
+
+.bunker-workspace .status{position:sticky;bottom:16px;background:#24241f;color:white;padding:16px 20px;border-radius:12px}
+.bunker-workspace .error{padding:14px 18px}
+.bunker-workspace .wallet-options{display:flex;flex-wrap:wrap;gap:8px}
+.bunker-workspace .wallet-options p{flex-basis:100%}
+.bunker-workspace .gas-wallet code{display:inline;background:none;padding:0}
+@media(max-width:640px){main.bunker-workspace{padding:0 16px 32px}.bunker-steps{gap:4px;overflow-x:auto}.bunker-steps button{font-size:12px;white-space:nowrap}.bunker-workspace header{height:auto;flex-direction:row}.bunker-batch{align-items:flex-start;flex-direction:column}}

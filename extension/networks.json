@@ -1,0 +1,5 @@
+[
+  { "id": 137, "name": "Polygon", "symbol": "POL", "rpc": "https://polygon-bor-rpc.publicnode.com" },
+  { "id": 100, "name": "Gnosis", "symbol": "xDAI", "rpc": "https://gnosis-rpc.publicnode.com" },
+  { "id": 1, "name": "Ethereum", "symbol": "ETH", "rpc": "https://ethereum-rpc.publicnode.com" }
+]
