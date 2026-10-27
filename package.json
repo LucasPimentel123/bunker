@@ -18,6 +18,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "check": "tsc -b",
     "test": "vitest run",
+    "test:skill": "node --test tests/bunker-skill.test.mjs",
     "release:archive": "node scripts/package-release.mjs",
     "test:fork": "vitest run --config vitest.forks.config.ts",
     "demo": "node scripts/demo-chain.mjs",

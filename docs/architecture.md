@@ -1,5 +1,31 @@
 # Architecture and trust boundaries
 
+## Primary entry point: the Bunker skill
+
+[`skills/bunker`](../skills/bunker/SKILL.md) is the normal launch experience.
+It orchestrates source inspection, prerequisites, the `bunker:build` target,
+reviewed local HTTPS setup, diagnostics and a retained foreground server session.
+The guided UI opens at `/designs/guided.html?design=segments`. The skill's inspector
+is read-only and works when installed separately from the application checkout.
+Its journal/build observations do not establish actual OS trust or publisher identity.
+
+The skill follows the open Agent Skills format and defines capabilities rather
+than vendor tool names. Codex/Claude invocation syntax and installation paths are
+documented in [agent compatibility](agent-compatibility.md). Other local agents
+can read `SKILL.md` directly; `agents/openai.yaml` is an optional display adapter.
+
+The agent stops for explicit approval of the concrete certificate/domain changes.
+The user then performs all passkey and wallet confirmations in the UI. The skill
+does not hold keys, sign or submit transactions for them. Guardian recovery is real;
+guided withdrawal remains demonstrative. Local source builds are not authenticated
+production releases. A signed, independently verifiable distribution is still needed.
+
+The Bunker HTTPS profile proxies allowlisted read RPCs and listens on loopback only.
+Its read-only proxy does not make wallet-driven guardian transactions read-only.
+The extension, isolated proof and workbench remain separate development targets.
+
+## Recovery workbench
+
 The browser reads a user-selected JSON-RPC endpoint, builds a restricted protocol call locally, asks the user's EIP-1193 wallet to sign/send, then checks the receipt and relevant resulting state. The static server stores no keys and has no application API. EIP-6963 discovery handles multiple wallet extensions without choosing whichever extension overwrote `window.ethereum` last.
 
 `src/core/inspect.ts` reads Safe owners, threshold, nonce, modules, guards and canonical singleton runtime at a pinned block. Recovery modules are accepted only when their runtime matches the known deployed version after normalizing the immutable delay. The observed delay is shown to the user; it is never substituted with a product default.

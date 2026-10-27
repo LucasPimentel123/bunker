@@ -14,6 +14,7 @@ and the [coverage document](docs/coverage.md).
 
 ```sh
 npm run check
+npm run test:skill
 npm run test:bunker:e2e
 npm test
 npm run build

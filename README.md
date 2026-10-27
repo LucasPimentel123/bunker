@@ -9,7 +9,7 @@
 
 <p align="center">
   <strong>An independent way back to your Picnic account.</strong><br>
-  Open source. Runs locally. Your keys stay with you.
+  Start with the Bunker skill. Run locally. Keep your keys with you.
 </p>
 
 <p align="center">
@@ -43,12 +43,48 @@ signing and sending. A public address by itself does not grant access to an acco
 
 ## Get started
 
-You need **Node.js 22.12+**. The local HTTPS/passkey setup currently targets **macOS**.
+**Use the [Bunker skill](skills/bunker/SKILL.md) to open Bunker locally.**
+The agent handles setup and troubleshooting; you use the guided interface and
+confirm wallet and passkey requests yourself.
+
+In an agent that supports skills, ask:
+
+> Install the Bunker skill from `usePicnic/bunker`, path `skills/bunker`.
+> Then prepare and open Bunker locally.
+
+The agent should resolve the selected revision to a full commit and keep it fixed
+for your session. This is currently a development preview.
+Installing from this repository is not the same as verifying a signed production
+release; that distribution is still to come.
+
+Once the skill is available to your agent, start with:
+
+> Use the Bunker skill to open Bunker locally and help me recover access to my Picnic account.
+
+The same folder works as an [Agent Skills](https://agentskills.io/specification)
+package or as instructions a local agent reads directly. No OpenAI or Anthropic
+API is required by the skill. Use `$bunker` in Codex, `/bunker` in Claude Code,
+or point another agent at `skills/bunker/SKILL.md`.
+[Installation and capability requirements for different agents →](docs/agent-compatibility.md)
+
+The skill checks the source and prerequisites, builds the local app, presents any
+certificate/domain changes for approval, starts the server and checks it before
+opening the guided flow. It can resume an existing installation and remove its
+local configuration when you ask. No seed, private key or passkey export belongs
+in the chat.
+
+The current local host is **macOS**, with **Node.js 22.12+**, npm, Git and OpenSSL.
+The agent checks these for you. A phone may participate through a supported wallet
+or passkey provider, but is not yet a supported local host.
+
+<details>
+<summary><strong>Manual setup for contributors</strong></summary>
 
 ```sh
 git clone https://github.com/usePicnic/bunker.git
 cd bunker
 npm ci --ignore-scripts
+npm audit --audit-level=high
 npm run bunker:build
 npm run bunker:setup -- prepare
 ```
@@ -61,6 +97,8 @@ complete installation and start the loopback-only server.
 Once running, open the guided flow at
 **https://bunker.usepicnic.com:8443/designs/guided.html?design=segments**.
 This is a local address configured by setup, not a hosted service.
+
+</details>
 
 <details>
 <summary><strong>Other development targets</strong></summary>
@@ -82,6 +120,7 @@ Install [Foundry/Anvil](https://getfoundry.sh/) for local contract tests.
 
 ```sh
 npm run check
+npm run test:skill
 npm run test:bunker:e2e
 npm test
 ```
@@ -116,7 +155,7 @@ commits. Use synthetic addresses and disposable local accounts in tests.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks.
 
 [Architecture](docs/architecture.md) · [Asset coverage](docs/coverage.md) ·
-[Third-party notices](NOTICE.md) · [Companion skill](skills/picnic-recovery/SKILL.md)
+[Third-party notices](NOTICE.md) · [Start with the Bunker skill](skills/bunker/SKILL.md)
 
 Made by [Picnic](https://usepicnic.com). MIT for original code; third-party fixtures
 retain their upstream licenses.
