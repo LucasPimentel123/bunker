@@ -24,6 +24,8 @@ function inventory(account: string, results: Map<number, NetworkDiagnosis>, star
     }));
     return { id: String(chain.id), chainId: chain.id, name: chain.name, symbol: chain.nativeCurrency.symbol,
       status: result.status, issues: result.issues, block: result.snapshot?.block.toString(), items,
+      checkedTokens: result.checkedTokens, totalTokens: result.totalTokens, failedTokens: result.failedTokens,
+      unreadableTokens: result.unreadableTokens.length, sources: result.sources,
       count: items.length, guardians: result.snapshot?.recoveries.flatMap(r => r.guardians) ?? [] };
   }) };
 }
@@ -50,7 +52,8 @@ async function scan(value: string, signal: AbortSignal, progress: (done: number,
     } catch {
       signal.throwIfAborted();
       const previous = results.get(chain.id)!;
-      results.set(chain.id, { ...previous, status: previous.snapshot ? 'partial' : 'unavailable', issues: [...previous.issues, 'Consulta não concluída; saldos ausentes são desconhecidos.'] });
+      const reason = bounded.aborted ? 'A consulta atingiu o tempo limite desta rede. Os saldos ainda não consultados continuam desconhecidos.' : 'Consulta não concluída; saldos ausentes são desconhecidos.';
+      results.set(chain.id, { ...previous, status: previous.snapshot ? 'partial' : 'unavailable', issues: [...previous.issues, reason] });
     } finally { if (!signal.aborted) progress(++done, chains.length); }
   }));
   signal.throwIfAborted();

@@ -23,6 +23,48 @@ function setup(){
 }
 const flush=()=>new Promise(r=>setTimeout(r,5));
 
+test('network assets expand independently of selection and stay expanded after Back',()=>{
+ const h=setup();h.seed();
+ const group=id=>h.scene.innerHTML.match(new RegExp(`<details class="pb-network-assets" data-assets-network="${id}"[^>]*>[\\s\\S]*?</details>`))[0];
+ assert.doesNotMatch(group('100'),/data-assets-network="100" open/);
+ assert.match(group('100'),/USDC/);assert.doesNotMatch(group('100'),/>ETH</);
+ assert.match(group('8453'),/>ETH</);assert.doesNotMatch(group('8453'),/USDC/);
+ assert.doesNotMatch(group('100'),/<input/);
+ h.node('root').events.toggle({target:{dataset:{assetsNetwork:'100'},open:true}});
+ assert.deepEqual([...h.s.selected],['100','8453']);
+ h.node('root').events.change({target:{dataset:{network:'100'},checked:false}});
+ assert.deepEqual([...h.s.selected],['8453']);
+ h.api.go('fees');h.api.goBack();
+ assert.match(group('100'),/data-assets-network="100" open/);
+ assert.doesNotMatch(group('8453'),/data-assets-network="8453" open/);
+ assert.deepEqual([...h.s.selected],['8453']);
+ h.node('root').events.toggle({target:{dataset:{assetsNetwork:'100'},open:false}});h.api.render();
+ assert.doesNotMatch(group('100'),/data-assets-network="100" open/);
+ h.api.restart();h.seed();assert.doesNotMatch(group('100'),/data-assets-network="100" open/);
+});
+test('an incomplete network with no confirmed assets remains inspectable and unselected',()=>{
+ const h=setup();h.seed();const value=inventory();
+ value.networks.push({id:'4663',chainId:4663,name:'Robinhood Chain',symbol:'ETH',status:'unavailable',items:[],issues:['HTTP 429: too many requests'],checkedTokens:0,totalTokens:3,failedTokens:0,sources:[]});
+ h.api.setInventory(value);h.api.render();
+ assert.match(h.scene.innerHTML,/data-assets-network="4663"/);
+ assert.match(h.scene.innerHTML,/data-network="4663"[^>]*disabled/);
+ assert.match(h.scene.innerHTML,/HTTP 429: too many requests/);
+ assert.match(h.scene.innerHTML,/Nenhum saldo confirmado\. Isso não significa saldo zero/);
+ assert.match(h.scene.innerHTML,/0 de 3 tokens consultados/);
+ assert.equal(h.s.selected.has('4663'),false);
+ assert.match(h.scene.innerHTML,/Levar 2 ativos/);
+});
+test('partial holdings retain their balances and expose failed reads without injecting RPC or token markup',()=>{
+ const h=setup();h.seed();const value=inventory();
+ value.networks[0]={...value.networks[0],status:'partial',items:[{name:'<img src=x onerror=alert(1)>',balance:'3'}],issues:['<script>unsafe</script>'],failedTokens:2,checkedTokens:3,totalTokens:3,sources:['rpc.example']};
+ h.api.setInventory(value);h.api.render();const html=h.scene.innerHTML;
+ assert.match(html,/2 saldo\(s\) de tokens não respondido\(s\) pelo RPC/);
+ assert.match(html,/Fonte: rpc.example/);assert.match(html,/1 ativo · parcial/);
+ assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt;/);assert.match(html,/&lt;script&gt;unsafe&lt;\/script&gt;/);
+ assert.doesNotMatch(html,/<script>unsafe|<img src=x/);
+ assert.equal(h.s.selected.has('100'),true);assert.match(html,/<td>3<\/td>/);
+});
+
 test('initial screen ignores old snapshot and direct fund/destination navigation',()=>{
  const h=setup();assert.equal(h.s.screen,'access');assert.equal(h.s.selected.size,0);h.api.go('fund');assert.equal(h.s.screen,'access');assert.doesNotMatch(h.scene.innerHTML,/Envie|0xaaaa/);h.api.startMethod('wallet');assert.equal(h.s.screen,'connect-source');assert.equal(h.s.selected.size,0);
 });
