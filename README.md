@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/bunker-banner.svg" alt="Picnic Bunker — your access, independent" width="880">
+  <img src="docs/assets/bunker-banner.png" alt="Picnic Bunker — an open hatch with lime steps" width="880">
 </p>
 
 <p align="center">
