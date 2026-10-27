@@ -18,6 +18,10 @@ Use an explicitly selected revision when one is supplied; otherwise resolve the
 current `main` to a full commit before acquiring this development preview. Inspect
 that revision rather than assuming the checkout contains the app. A future release
 should name an exact tag/commit plus independently verifiable publisher signature.
+Search results and old development documentation do not select a revision. Do not
+default to a historical feature branch found there. Resolve refs directly against
+the canonical Git remote. This fresh-setup default does not authorize updating an
+existing recovery session.
 
 For a new checkout, resolve the chosen ref in the canonical repository to a full
 commit ID, clone into a new user-owned directory, and check out that exact ID in

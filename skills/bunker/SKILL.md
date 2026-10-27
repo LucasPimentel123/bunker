@@ -2,16 +2,38 @@
 name: bunker
 license: MIT
 description: >-
-  Set up and run Picnic Bunker locally, guide account access with a passkey or external wallet,
-  diagnose interrupted setup, and remove its local HTTPS configuration. Use when someone wants
-  to open Bunker or recover access to a Picnic account independently of Picnic's hosted app.
+  Prepare, verify and launch Picnic Bunker on the user's computer; resume or
+  troubleshoot local setup and remove its HTTPS configuration when requested.
+  Use when someone wants to set up Bunker or use it to recover a Picnic account.
+  The Bunker UI runs the recovery flow; the assistant can answer questions on request.
 ---
 
 # Bunker
 
-You operate the local setup; the user operates the wallet and passkey in Bunker's
-guided UI. Start with that UI, not the extension, isolated proof or developer
-workbench. Follow the user's language and explain one next action at a time.
+Your primary job is to set up Bunker correctly, verify the local installation and
+open its guided UI. Bunker guides account recovery; the user makes recovery choices
+and approves wallet/passkey requests there. After launch, remain available for
+questions and setup problems. Do not conduct or supervise a parallel recovery flow
+in chat. Follow the user's language.
+
+## Start with setup, then the UI
+
+A request to recover a Picnic account using this repository is an account-recovery
+request. Bunker is the tool, not the thing being restored. Do not ask the user to
+choose between recovering their Picnic account and repairing Bunker software.
+Repair setup problems encountered during launch; software development is a separate
+task only when requested.
+
+Proceed to source inspection and local setup. Before opening the UI, do not ask
+whether the user has a passkey, wallet, email login, guardian, Safe address or
+recovery destination. Those are decisions for the guided UI, not prerequisites
+for launching it. Do not create an additional "other recovery method" option in chat.
+Ask only for information that blocks local setup and cannot be inspected, or for
+the concrete HTTPS authorization below. Keep existing safety and approval checks.
+
+A suitable first response is: "I'll prepare Bunker on your computer and open the
+recovery interface. You'll choose how to access your Picnic account there."
+Once it is ready, open it and give the user the URL. Let the UI lead from there.
 
 ## Agent-independent execution
 
@@ -111,27 +133,26 @@ unexplained command list or claim the app is ready merely because the server sta
 If an already running installation passes doctor and source/build provenance is
 known, open it directly without rebuilding or asking for the same setup approval.
 
-## Hand off to the guided UI
+## Hand off, then answer questions if asked
 
-- The UI offers **passkey** or **external wallet** and verifies current authority
-  before asset discovery. Do not ask for a Safe address if automatic discovery works.
-- The user completes every passkey, wallet connection, signature and transaction
-  confirmation. Do not collect private keys, seeds, passwords, OTPs, assertion payloads
-  or credential-vault exports. Never approve on their behalf.
-- A passkey user also needs an external wallet to pay transaction fees. The UI
-  handles network balances and the choice to fund or skip; do not move gas yourself.
-- If the passkey is unavailable, the guided UI can perform configured guardian
-  recovery and shows the on-chain delay. **No guardian may become the new owner.**
-  Do not upgrade the Candide module as part of setup or recovery.
-- Explain the current withdrawal limit at the handoff: the guided screen does not
-  yet move assets. If the user requests a real exit, consult `docs/recovery-app.md`
-  in the checkout and describe the separate workbench's supported route before use.
-  Do not silently send them into a different execution flow.
+The setup task is ready for handoff when the inspected build is running, local
+checks pass and the guided URL has been opened or supplied to the user. This does
+not establish browser/passkey acceptance or mean the account has been recovered.
+Keep the handoff short: provide the URL, state the current development-preview
+limit, and tell the user Bunker will guide recovery and you are available for questions.
 
-Keep troubleshooting to the observed error. RPC/index failures do not mean zero
-balance; retain progress and use the app's retry path. Never restart a pending
-financial operation just because its result was not displayed. Confirm its on-chain
-status first. Lack of a usable passkey or configured guardian is an actual limitation.
+The UI owns method selection, account discovery, access verification, guardian
+recovery, destination, fees and withdrawal steps. Do not drive those choices in
+chat, automate financial actions, or request progress updates after each screen.
+The user completes every connection, passkey request, signature and transaction
+confirmation. Never collect keys, seeds, passwords, OTPs or credential payloads,
+and never approve on the user's behalf.
+
+If the user asks about a recovery screen or reports an error, read
+[recovery-questions.md](references/recovery-questions.md) and the relevant product
+documentation. Answer the specific question, then let the user continue in the UI.
+Keep local setup troubleshooting within this skill; do not restart or reroute a
+financial operation to repair a display or connection problem.
 
 ## Finish or resume
 
