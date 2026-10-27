@@ -1,8 +1,8 @@
-import { concat, encodeAbiParameters, encodeFunctionData, getAddress, getCreate2Address, keccak256, pad, parseAbi, parseAbiItem, stringToHex, zeroAddress, type Address, type Hex } from "viem";
+import { concat, encodeAbiParameters, encodeFunctionData, getAddress, getCreate2Address, keccak256, pad, parseAbi, toHex, stringToHex, zeroAddress, type Address, type Hex } from "viem";
 import deployments from "../catalog/account-discovery.json";
 import { same } from "./client";
 import { inspectAccount, assertSupportedSafe, recoveryPeriod, SAFE_SINGLETONS } from "./inspect";
-import { inspectCard } from "./card";
+import { inspectCard, proxyImplementation } from "./card";
 import { ReadPool } from "./reads";
 
 const setupAbi = parseAbi(["function setup(address[],uint256,address,bytes,address,address,uint256,address)", "function enableModules(address[])"]);
@@ -89,46 +89,84 @@ export async function discoverRecoveryAccounts(pool: ReadPool, wallet: Address, 
   }
   return [...found.values()];
 }
-const transferEvent = parseAbiItem("event Transfer(address indexed from,address indexed to,uint256 value)");
-// Address hints come from the deterministic original card and transfer history.
-// Neither a transfer nor a matching address proves control. Every candidate is
-// checked against the current Safe/Delay controller relationship before use.
-export async function discoverCards(pool: ReadPool, controller: Address) {
-  const predicted = predictCardAccount(controller);
-  const candidates = new Set<Address>([predicted]);
-  const issues: string[] = [];
-  const notes: string[] = [];
-  for (const args of [{ from: controller }, { to: controller }, { from: predicted }]) {
-    try {
-      const logs = await pool.run(client => client.getLogs({ event: transferEvent, args, fromBlock: 0n, toBlock: "latest", strict: true }), `history:${JSON.stringify(args)}`);
-      if (logs.length > 2000) issues.push("Card discovery history was truncated; additional cards may be missing");
-      for (const log of logs.slice(-2000).reverse()) {
-        const candidate = args.to ? log.args.from : log.args.to;
-        if (!same(candidate, controller) && !same(candidate, zeroAddress)) candidates.add(candidate);
+// Gnosis Pay's v5 Delay emits EnabledModule(address) with a NON-indexed
+// controller. Filtering topic[1] would silently miss these events. Read bounded
+// block pages, filter their data locally, then verify the emitter and live wiring.
+// ABI: https://github.com/gnosispay/account-kit/blob/main/contracts/interfaces/IDelayModifier.sol
+export const cardControllerTopic = keccak256(stringToHex("EnabledModule(address)"));
+const cardV5Implementation = "0x22d903fd45f441f51bcad198d14eba8a75ea1ef0";
+type CardHistory = { head?: bigint; cursor?: bigint; span?: bigint; floor: bigint; modules: Map<string, Address> };
+export async function discoverCards(pool: ReadPool, controller: Address, pageBudget = 32) {
+  const predicted = predictCardAccount(controller), issues: string[] = [], notes: string[] = [];
+  const history = pool.sessionState<CardHistory>(`card-history:${controller.toLowerCase()}`, () => ({ modules: new Map(), floor: 0n }));
+  try {
+    if (history.head === undefined) {
+      const head = await pool.run(client => client.getBlockNumber());
+      pool.throwIfAborted(); history.head = head; history.cursor = head; history.span = head + 1n;
+    }
+    else if (history.cursor! < history.floor) {
+      const head = await pool.run(client => client.getBlockNumber());
+      pool.throwIfAborted();
+      if (head > history.head) { history.floor = history.head + 1n; history.cursor = head; history.span = head - history.head; history.head = head; }
+    }
+    for (let page = 0; history.cursor! >= history.floor && page < pageBudget; page++) {
+      pool.throwIfAborted();
+      const end = history.cursor!, lower = end >= history.span! ? end - history.span! + 1n : 0n, from = lower < history.floor ? history.floor : lower;
+      try {
+        const logs = await pool.run(client => client.request({ method: "eth_getLogs", params: [{
+          fromBlock: toHex(from), toBlock: toHex(end), topics: [cardControllerTopic],
+        }] }));
+        // Providers may truncate at their result limit. Split instead of slicing.
+        if (logs.length >= 1000) throw Error("Card event page limit");
+        const found: Address[] = [];
+        for (const log of logs) {
+          if (log.removed) continue;
+          if (log.blockNumber === null || BigInt(log.blockNumber) < from || BigInt(log.blockNumber) > end
+            || log.topics[0]?.toLowerCase() !== cardControllerTopic.toLowerCase()) throw Error("Card event page mismatch");
+          const value = log.topics.length === 1 ? log.data : log.topics.length === 2 && log.data === "0x" ? log.topics[1] : undefined;
+          if (!/^0x0{24}[a-f0-9]{40}$/i.test(value ?? "")) throw Error("Malformed card controller event");
+          if (same(`0x${value!.slice(-40)}`, controller)) found.push(getAddress(log.address));
+        }
+        pool.throwIfAborted();
+        found.forEach(module => history.modules.set(module.toLowerCase(), module));
+        history.cursor = from - 1n;
+      } catch {
+        pool.throwIfAborted();
+        if (history.span! <= 1n) { issues.push("Não foi possível consultar um trecho dos eventos de cartões. Tente novamente para retomar."); break; }
+        history.span = (history.span! + 1n) / 2n;
       }
-    } catch { pool.throwIfAborted(); issues.push("Card transfer history could not be verified; additional cards may be missing"); }
+    }
+  } catch { pool.throwIfAborted(); issues.push("Histórico de vínculos dos cartões indisponível. Tente novamente."); }
+  const incomplete = history.cursor === undefined || history.cursor >= history.floor;
+  if (incomplete && !issues.length) issues.push("A busca de cartões ainda não terminou. Continue para consultar os eventos restantes.");
+  const addresses = new Map<string, Address>();
+  // Predicted original card is a useful hint, but never proof of authority.
+  async function verifyCard(candidate: Address, expectedModule?: Address) {
+    const code = await pool.run(client => client.getCode({ address: candidate }));
+    if (!code || code === "0x" || code.length > 1000) return;
+    const singleton = await pool.run(client => client.getStorageAt({ address: candidate, slot: "0x0" }));
+    if (!singleton || !SAFE_SINGLETONS.some(address => same(address, `0x${singleton.slice(-40)}`))) {
+      if (same(candidate, predicted)) notes.push("O cartão original está fora do escopo v5 suportado.");
+      return;
+    }
+    const delays = (await pool.run(client => inspectCard(client, candidate, pool.chainId)))
+      .filter(delay => delay.delayVersion === "v5" && delay.controllers.some(owner => same(owner, controller)));
+    if (delays.length === 1 && (!expectedModule || same(delays[0].address, expectedModule))) addresses.set(candidate.toLowerCase(), candidate);
   }
-  const addresses: Address[] = [];
-  if (candidates.size > 64) issues.push("Card candidate limit reached; additional cards may be missing");
-  const bounded = [...candidates].slice(0, 64);
-  for (let offset = 0; offset < bounded.length; offset += 4) await Promise.all(bounded.slice(offset, offset + 4).map(async candidate => {
+  try { await verifyCard(predicted); }
+  catch { pool.throwIfAborted(); issues.push("O cartão original ainda não pôde ser verificado."); }
+  const modules = [...history.modules.values()];
+  for (let offset = 0; offset < modules.length; offset += 4) await Promise.all(modules.slice(offset, offset + 4).map(async module => {
     try {
-      const code = await pool.run(client => client.getCode({ address: candidate }), `code:${candidate.toLowerCase()}`);
-      if (!code || code === "0x") return;
-      // Ignore ordinary token/router contracts before the more expensive Safe inspection.
-      if (code.length > 1000) return;
-      const singleton = await pool.run(client => client.getStorageAt({ address: candidate, slot: "0x0" }), `singleton:${candidate.toLowerCase()}`);
-      if (!singleton || !SAFE_SINGLETONS.some(address => same(address, `0x${singleton.slice(-40)}`))) {
-        if (same(candidate, predicted)) notes.push(`Original card ${candidate} is outside the supported v5 discovery scope`);
-        return;
-      }
-      const delays = await pool.run(client => inspectCard(client, candidate, 100), `card:${candidate.toLowerCase()}`);
-      if (delays.filter(delay => delay.delayVersion === "v5" && delay.controllers.some(owner => same(owner, controller))).length === 1) addresses.push(candidate);
+      const code = await pool.run(client => client.getCode({ address: module }));
+      if (!same(proxyImplementation(code) ?? zeroAddress, cardV5Implementation)) return;
+      const avatar = await pool.run(client => client.readContract({ address: module, abi: parseAbi(["function avatar() view returns(address)"]), functionName: "avatar" }));
+      await verifyCard(avatar, module);
     } catch {
       pool.throwIfAborted();
-      if (same(candidate, predicted)) issues.push(`Original card ${candidate} could not be verified; it may have been replaced`);
-      else if (!issues.includes("Some card candidates could not be verified")) issues.push("Some card candidates could not be verified");
+      if (!issues.includes("Alguns vínculos de cartões ainda não puderam ser verificados.")) issues.push("Alguns vínculos de cartões ainda não puderam ser verificados.");
     }
   }));
-  return { addresses, issues, notes };
+  return { addresses: [...addresses.values()], issues, notes, incomplete,
+    history: { throughBlock: history.head?.toString(), nextBlock: incomplete ? history.cursor?.toString() : undefined } };
 }

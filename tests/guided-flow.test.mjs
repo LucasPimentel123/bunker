@@ -23,6 +23,48 @@ function setup(){
 }
 const flush=()=>new Promise(r=>setTimeout(r,5));
 
+test('network assets expand independently of selection and stay expanded after Back',()=>{
+ const h=setup();h.seed();
+ const group=id=>h.scene.innerHTML.match(new RegExp(`<details class="pb-network-assets" data-assets-network="${id}"[^>]*>[\\s\\S]*?</details>`))[0];
+ assert.doesNotMatch(group('100'),/data-assets-network="100" open/);
+ assert.match(group('100'),/USDC/);assert.doesNotMatch(group('100'),/>ETH</);
+ assert.match(group('8453'),/>ETH</);assert.doesNotMatch(group('8453'),/USDC/);
+ assert.doesNotMatch(group('100'),/<input/);
+ h.node('root').events.toggle({target:{dataset:{assetsNetwork:'100'},open:true}});
+ assert.deepEqual([...h.s.selected],['100','8453']);
+ h.node('root').events.change({target:{dataset:{network:'100'},checked:false}});
+ assert.deepEqual([...h.s.selected],['8453']);
+ h.api.go('fees');h.api.goBack();
+ assert.match(group('100'),/data-assets-network="100" open/);
+ assert.doesNotMatch(group('8453'),/data-assets-network="8453" open/);
+ assert.deepEqual([...h.s.selected],['8453']);
+ h.node('root').events.toggle({target:{dataset:{assetsNetwork:'100'},open:false}});h.api.render();
+ assert.doesNotMatch(group('100'),/data-assets-network="100" open/);
+ h.api.restart();h.seed();assert.doesNotMatch(group('100'),/data-assets-network="100" open/);
+});
+test('an incomplete network with no confirmed assets remains inspectable and unselected',()=>{
+ const h=setup();h.seed();const value=inventory();
+ value.networks.push({id:'4663',chainId:4663,name:'Robinhood Chain',symbol:'ETH',status:'unavailable',items:[],issues:['HTTP 429: too many requests'],checkedTokens:0,totalTokens:3,failedTokens:0,sources:[]});
+ h.api.setInventory(value);h.api.render();
+ assert.match(h.scene.innerHTML,/data-assets-network="4663"/);
+ assert.match(h.scene.innerHTML,/data-network="4663"[^>]*disabled/);
+ assert.match(h.scene.innerHTML,/HTTP 429: too many requests/);
+ assert.match(h.scene.innerHTML,/Nenhum saldo confirmado\. Isso não significa saldo zero/);
+ assert.match(h.scene.innerHTML,/0 de 3 tokens consultados/);
+ assert.equal(h.s.selected.has('4663'),false);
+ assert.match(h.scene.innerHTML,/Levar 2 ativos/);
+});
+test('partial holdings retain their balances and expose failed reads without injecting RPC or token markup',()=>{
+ const h=setup();h.seed();const value=inventory();
+ value.networks[0]={...value.networks[0],status:'partial',items:[{name:'<img src=x onerror=alert(1)>',balance:'3'}],issues:['<script>unsafe</script>'],failedTokens:2,checkedTokens:3,totalTokens:3,sources:['rpc.example']};
+ h.api.setInventory(value);h.api.render();const html=h.scene.innerHTML;
+ assert.match(html,/2 saldo\(s\) de tokens não respondido\(s\) pelo RPC/);
+ assert.match(html,/Fonte: rpc.example/);assert.match(html,/1 ativo · parcial/);
+ assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt;/);assert.match(html,/&lt;script&gt;unsafe&lt;\/script&gt;/);
+ assert.doesNotMatch(html,/<script>unsafe|<img src=x/);
+ assert.equal(h.s.selected.has('100'),true);assert.match(html,/<td>3<\/td>/);
+});
+
 test('initial screen ignores old snapshot and direct fund/destination navigation',()=>{
  const h=setup();assert.equal(h.s.screen,'access');assert.equal(h.s.selected.size,0);h.api.go('fund');assert.equal(h.s.screen,'access');assert.doesNotMatch(h.scene.innerHTML,/Envie|0xaaaa/);h.api.startMethod('wallet');assert.equal(h.s.screen,'connect-source');assert.equal(h.s.selected.size,0);
 });
@@ -66,7 +108,7 @@ test('destination cannot advance after source or payer changed silently',async()
 });
 test('Back preserves answers; completion shows five checks; restart clears identity',async()=>{
  const h=setup();h.seed();h.payer();h.gas('100');h.gas('8453');h.s.destination=DEST;h.api.go('fees');await h.api.next();assert.equal(h.s.screen,'destination');await h.api.next();assert.equal(h.s.screen,'move');h.api.goBack();assert.equal(h.s.destination,DEST);assert.equal(h.s.screen,'destination');
- h.s.screen='done';h.api.render();assert.ok(h.road.every(n=>n.querySelector('b').textContent==='✓'));assert.match(h.scene.innerHTML,/Nada foi enviado/);h.api.restart();assert.equal(h.s.screen,'access');assert.equal(h.s.payer,'');assert.equal(h.s.destination,'');assert.equal(h.s.selected.size,0);
+ h.s.screen='done';h.api.render();assert.ok(h.road.every(n=>n.querySelector('b').textContent==='✓'));assert.match(h.scene.innerHTML,/Nenhuma retirada foi necessária/);h.api.restart();assert.equal(h.s.screen,'access');assert.equal(h.s.payer,'');assert.equal(h.s.destination,'');assert.equal(h.s.selected.size,0);
 });
 test('double choice and cancel during animation never skip stages',async()=>{
  const h=setup();h.seed();h.payer();h.gas('100','empty',0n);h.gas('8453');h.api.go('fees');await h.api.openFunding(h.node('a'));await h.click('skip');await flush();assert.equal(h.s.screen,'fund');assert.ok(h.s.selected.has('100'));
@@ -83,16 +125,26 @@ test('multiple accounts require a choice; no results never fall back to snapshot
  const h=setup();external(h,[SAFE,DEST]);h.api.startMethod('wallet');await h.api.connectSource('actual');assert.equal(h.s.screen,'account');assert.equal(h.s.selected.size,0);await h.api.scanSource(DEST);assert.equal(h.s.screen,'assets');assert.match(h.scene.innerHTML,new RegExp(DEST));
  external(h,[]);h.api.startMethod('wallet');await h.api.connectSource('actual');assert.equal(h.s.screen,'no-account');assert.equal(h.s.selected.size,0);
 });
-test('passkey must identify and verify an account before displaying assets; no preloaded fixture',async()=>{
- const h=setup();let release;h.ctx.window.picnicGuidedDiscovery={discoverPasskey:()=>new Promise(r=>release=r),scan:async(a)=>({...inventory(),account:a})};h.api.startMethod('passkey');assert.equal(h.s.screen,'passkey-discover');assert.equal(h.s.selected.size,0);release({addresses:[DEST],issues:[],needsSecond:false});await flush();assert.equal(h.s.screen,'assets');assert.equal(h.s.passkeyReady,true);assert.match(h.scene.innerHTML,new RegExp(DEST));assert.equal(h.s.payer,'');await h.api.next();assert.equal(h.s.screen,'fees');assert.match(h.scene.innerHTML,/Uma carteira paga as taxas/);
+test('passkey identification requires a connected payer before any asset scan',async()=>{
+ const h=setup();let release,scans=0;h.ctx.window.picnicGuidedDiscovery={discoverPasskey:()=>new Promise(r=>release=r),scan:async(a)=>{scans++;return {...inventory(),account:a};}};
+ h.api.startMethod('passkey');assert.equal(h.s.screen,'passkey-discover');release({addresses:[DEST],issues:[],needsSecond:false});await flush();
+ assert.equal(h.s.screen,'connect-payer');assert.equal(scans,0);assert.equal(h.s.passkeyReady,true);assert.match(h.scene.innerHTML,/Uma carteira paga as taxas/);
+ h.api.providers.set('payer',{name:'Test',provider:h.provider()});await h.api.connectWallet('payer');assert.equal(scans,1);assert.equal(h.s.screen,'assets');assert.equal(h.s.payer,PAYER);
+ h.api.goBack();assert.equal(h.s.screen,'connect-payer');await h.api.next();assert.equal(h.s.screen,'assets');assert.equal(scans,1);
+});
+test('denied or canceled payer connection cannot scan; disconnect during scan ignores late balances',async()=>{
+ const h=setup();let scans=0,finish;h.ctx.window.picnicGuidedDiscovery={discoverPasskey:async()=>({addresses:[SAFE],issues:[],needsSecond:false}),scan:()=>{scans++;return new Promise(r=>finish=r);}};
+ h.api.startMethod('passkey');await flush();h.api.providers.set('denied',{name:'Test',provider:{request:async()=>{throw {code:4001};}}});await h.api.connectWallet('denied');assert.equal(scans,0);assert.equal(h.s.screen,'connect-payer');
+ const p=h.provider();h.api.providers.set('payer',{name:'Test',provider:p});const pending=h.api.connectWallet('payer');await flush();assert.equal(scans,1);p.change(DEST);finish(inventory());await pending;assert.equal(h.s.screen,'connect-payer');assert.equal(h.s.selected.size,0);
+ let accept;h.api.providers.set('late',{name:'Test',provider:{request:()=>new Promise(r=>accept=r)}});const late=h.api.connectWallet('late');h.api.goBack();accept([PAYER]);await late;assert.equal(h.s.screen,'access');assert.equal(h.s.payer,'');assert.equal(scans,1);
 });
 test('second passkey is requested only for multiple verified candidate keys',async()=>{
- const h=setup();let calls=0;h.ctx.window.picnicGuidedDiscovery={discoverPasskey:async()=>({addresses:[],issues:[],needsSecond:true}),confirmPasskey:async()=>{calls++;return {addresses:[SAFE],issues:[],needsSecond:false};},scan:async()=>inventory()};h.api.startMethod('passkey');await flush();assert.equal(h.s.screen,'passkey-confirm');assert.equal(calls,0);await h.api.discoverWithPasskey(true);assert.equal(calls,1);assert.equal(h.s.screen,'assets');
+ const h=setup();let calls=0;h.ctx.window.picnicGuidedDiscovery={discoverPasskey:async()=>({addresses:[],issues:[],needsSecond:true}),confirmPasskey:async()=>{calls++;return {addresses:[SAFE],issues:[],needsSecond:false};},scan:async()=>inventory()};h.api.startMethod('passkey');await flush();assert.equal(h.s.screen,'passkey-confirm');assert.equal(calls,0);await h.api.discoverWithPasskey(true);assert.equal(calls,1);assert.equal(h.s.screen,'connect-payer');
 });
 test('canceling passkey aborts discovery and ignores a late credential result',async()=>{
  const h=setup();let release,signal;h.ctx.window.picnicGuidedDiscovery={discoverPasskey:(s)=>{signal=s;return new Promise(r=>release=r);}};h.api.startMethod('passkey');h.api.goBack();assert.equal(signal.aborted,true);release({addresses:[SAFE],issues:[],needsSecond:false});await flush();assert.equal(h.s.screen,'access');assert.equal(h.s.selected.size,0);
 });
-test('asset withdrawal stays demonstrative; UI has no raw wallet send methods or snapshot bypass',()=>{
+test('asset withdrawal delegates to the guarded controller; UI has no raw wallet send methods or snapshot bypass',()=>{
  assert.doesNotMatch(source,/eth_send|eth_sign|personal_sign|wallet_send|passkeyPreview|Ver próxima tela|Disponível depois/);
  const html=fs.readFileSync('public/designs/guided.html','utf8');assert.doesNotMatch(html,/guided-account\.js/);assert.match(html,/guided-segments\.css/);
  const gallery=fs.readFileSync('public/designs/assets/navigation-studies.js','utf8');assert.match(gallery,/location.replace\('guided.html\?design=segments'\)/);assert.doesNotMatch(gallery,/Disponível depois|Ver próxima tela/);
@@ -213,4 +265,21 @@ test('retrying incomplete recovery shows loading and skipping cancels the stale 
 });
 test('the contract delay is visible before authorizing recovery, outside collapsed details',async()=>{
  const h=setup();guardianRecovery(h);h.api.startMethod('wallet');await h.api.connectSource('actual');await h.click('no-passkey');await flush();h.s.recoveryOwner=DEST;await h.api.next();const text=h.scene.innerHTML;assert.match(text,/<strong>7 dias<\/strong>/);assert.doesNotMatch(text,/Detalhes da recuperação|<details/);assert.match(text,new RegExp(DEST));assert.match(text,/data-action="edit-recovery-owner"/);h.api.restart();
+});
+
+test('WalletConnect pairing shows only the mobile QR code and cancel action',()=>{
+ const h=setup();h.seed();h.api.go('fees');h.s.walletConnect={qr:'data:image/png;base64,test'};h.api.render();assert.match(h.scene.innerHTML,/QR code WalletConnect/);assert.match(h.scene.innerHTML,/com sua carteira no celular/);assert.match(h.scene.innerHTML,/Cancelar conexão/);assert.doesNotMatch(h.scene.innerHTML,/Abrir carteira|Copiar conexão|copy-qr|href="wc:/);
+});
+
+test('live withdrawal requires an explicit click, preserves pending status and never advances on rejection',async()=>{
+ const h=setup();h.seed();h.payer();h.gas('100');h.gas('8453');h.s.destination=DEST;let prepared=0,sent=0,pending=false;
+ h.ctx.window.picnicGuidedDiscovery={withdrawal:{prepare:async()=>{prepared++;return pending?{status:'pending',hash:'0x123'}:{status:'ready',id:'review',count:1,parts:2,entries:[]};},execute:async()=>{sent++;pending=true;throw Error('receipt timeout');},receipt:async()=>{pending=false;return {hash:'0x123',completed:[],queued:true};}}};
+ h.api.go('destination');await h.api.next();await flush();assert.equal(prepared,1);assert.equal(sent,0);assert.equal(h.s.screen,'move');await h.api.next();assert.equal(sent,1);assert.equal(h.s.screen,'move');assert.equal(h.s.sent,0);
+ await h.api.next();assert.equal(h.s.withdrawal.status,'pending');assert.equal(sent,1);await h.api.next();assert.equal(h.s.withdrawal.status,'confirmed');assert.match(h.scene.innerHTML,/ainda precisa cumprir o prazo/);assert.equal(h.s.withdrawalReceipts.length,1);assert.equal(h.s.sent,0);
+});
+
+test('Back from assets visits the payer before the passkey account chooser',async()=>{
+ const h=setup();h.ctx.window.picnicGuidedDiscovery={discoverPasskey:async()=>({addresses:[SAFE,DEST],issues:[],needsSecond:false}),scan:async(a)=>({...inventory(),account:a})};
+ h.api.startMethod('passkey');await flush();assert.equal(h.s.screen,'account');await h.api.scanSource(SAFE);assert.equal(h.s.screen,'connect-payer');
+ h.api.providers.set('payer',{name:'Test',provider:h.provider()});await h.api.connectWallet('payer');assert.equal(h.s.screen,'assets');h.api.goBack();assert.equal(h.s.screen,'connect-payer');h.api.goBack();assert.equal(h.s.screen,'account');
 });

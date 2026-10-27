@@ -48,6 +48,14 @@ export class ReadPool {
   private current = 0;
   private namespace: string;
   private retrying = new Map<symbol, number>();
+  private localState: ReadCheckpoint = new Map();
+  get chainId() { return this.chain.id; }
+  // Resumable read-only cursors share the checkpoint namespace, including RPCs.
+  sessionState<T>(key: string, create: () => T): T {
+    const cache = this.checkpoint ?? this.localState, id = `${this.namespace}:session:${key}`;
+    if (!cache.has(id)) cache.set(id, { value: create(), hosts: [] });
+    return cache.get(id)!.value as T;
+  }
   readonly used = new Set<string>();
   constructor(private chain: Chain, endpoints: readonly { url: string; client?: PublicClient }[], private signal: AbortSignal,
     private waitLimit = 8_000, private onRetry?: (timeouts: number[]) => void, private checkpoint?: ReadCheckpoint, scope = "") {

@@ -15,11 +15,11 @@ continue in the UI. Ask for additional context only when needed to answer.
 - **Guardian recovery:** the UI can perform configured guardian recovery and
   displays the on-chain delay. No guardian may become the new owner. Do not
   upgrade the Candide module as part of setup or recovery.
-- **Withdrawal:** guided asset withdrawal is currently demonstrative, although
-  guardian recovery can submit real wallet-confirmed transactions. If the user
-  explicitly requests a real exit, consult `docs/recovery-app.md` in the checkout
-  and explain the separate workbench's supported route and limitations. Do not
-  silently switch the user into another execution flow.
+- **Withdrawal:** the guided UI prepares real withdrawals, simulates them and asks
+  the user to authorize with their passkey/owner wallet and confirm submission
+  with the gas-paying wallet. The payer may also receive funds. Card queueing is
+  not receipt of funds: wait for the contract delay, then explicitly release it.
+  Unsupported or blocked routes stay visible; do not describe them as completed.
 - **Errors:** RPC/index failures do not imply zero balances. Preserve progress
   and explain the app's relevant retry action. An absent transaction result is
   not evidence of failure: establish its on-chain status before suggesting a

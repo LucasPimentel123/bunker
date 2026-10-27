@@ -63,9 +63,10 @@ Map the operations below to the capabilities of the current host:
 If a required capability is unavailable, state the specific handoff. A text-only
 assistant can guide the process but must not claim to have performed local checks.
 
-The current build is a **development preview**: account discovery and guardian
-recovery are real, but guided asset withdrawal is demonstrative. State that before
-the user begins. Do not call a simulation a transfer or a checksum an authenticated
+The current build is a **development preview**: account discovery, guardian
+recovery and guided asset withdrawal are real. The user approves every signature
+and transaction. State that before the user begins; support varies by asset and
+deployment, and delayed routes require their on-chain waiting period. Do not call a simulation a transfer or a checksum an authenticated
 release. Signed production releases are not yet available.
 
 ## Find the source and inspect

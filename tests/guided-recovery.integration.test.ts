@@ -17,6 +17,8 @@ import { contractSignature, encodeAssertion } from '../src/proof/passkey';
 import { BUNKER_ORIGIN } from '../src/proof/localBunker';
 import { diagnose, verifyOnChain } from '../src/proof/simulation';
 import { testKey, testAssertion } from './helpers/passkey';
+import { createGuidedWithdrawal } from '../src/prototype/guided-withdrawal';
+import type { MigrationItem } from '../src/components/migration';
 import { guidedUi } from './helpers/guided-ui';
 import safeArtifact from './fixtures/Safe.json';
 import proxyArtifact from './fixtures/SafeProxy.json';
@@ -124,7 +126,40 @@ it.each(proxies)('UI → fresh passkey $version Safe → guardian → seven-day 
       return client.request({ method, params } as never);
     },
   } as EIP1193Provider;
+  const tokenId = `31337:token:${token.toLowerCase()}`, nativeId = '31337:native';
+  const items: MigrationItem[] = [
+    {id:nativeId,kind:'native',chainId:31337,symbol:'ETH',name:'Ether',order:0,tab:'transfer',selectable:true,amount:{value:10n**18n,decimals:18}},
+    {id:tokenId,kind:'token',chainId:31337,symbol:'TEST',name:'Test',order:1,tab:'transfer',selectable:true,holding:{address:token,balance:123n,verifiedDecimals:18,name:'Test',symbol:'TEST'} as MigrationItem['holding']},
+  ];
+  let loseReceipt = true, rejectPasskey = true;
+  const withdrawal = createGuidedWithdrawal(() => items, {
+    reader: () => ({...client,waitForTransactionReceipt:async (...args: Parameters<typeof client.waitForTransactionReceipt>)=>{const receipt=await client.waitForTransactionReceipt(...args);if(loseReceipt){loseReceipt=false;throw Error('Lost receipt response');}return receipt;}}),
+    identity: () => ({key:key.config,credentialId:'test',assertCurrent:()=>{}}),
+    authorize: async (_identity,hash) => {if(rejectPasskey){rejectPasskey=false;throw Error('Passkey rejected');}return {owner:signer,signature:contractSignature(signer,await encodeAssertion(testAssertion(key,hash,{origin:BUNKER_ORIGIN}),hash,key.config,BUNKER_ORIGIN))};},
+  });
+  const fetcher = (async (_url: unknown, init: RequestInit) => {
+    const body=JSON.parse(init.body as string);
+    expect(['eth_chainId','eth_getBalance']).toContain(body.method);
+    return {ok:true,json:async()=>({id:1,jsonrpc:'2.0',result:await client.request({method:body.method,params:body.params})})};
+  }) as typeof fetch;
+  // A real signature and Safe execution, with only the device prompt replaced
+  // by a fresh software WebAuthn assertion. No discovery signature is reused.
+  const passkeyRequest={account:safe,chainId:31337,payer:active,destination:active,method:'passkey' as const,ids:[tokenId]};
+  const passkeyPlan=await withdrawal.prepare(passkeyRequest,signal());expect(passkeyPlan.status).toBe('ready');
+  if(passkeyPlan.status!=='ready')throw Error('Missing passkey withdrawal');
+  const sendsBeforePasskey=requests.filter(m=>m==='eth_sendTransaction').length;
+  await expect(withdrawal.execute(passkeyPlan.id,provider,signal(),()=>{})).rejects.toThrow('Passkey rejected');
+  expect(requests.filter(m=>m==='eth_sendTransaction')).toHaveLength(sendsBeforePasskey);
+  const retryPlan=await withdrawal.prepare(passkeyRequest,signal());if(retryPlan.status!=='ready')throw Error('No retry plan');
+  await expect(withdrawal.execute(retryPlan.id,provider,signal(),()=>{})).rejects.toMatchObject({pendingHash:expect.stringMatching(/^0x/)});
+  const resumed=createGuidedWithdrawal(()=>items,{reader:()=>client});
+  expect((await resumed.prepare(passkeyRequest,signal())).status).toBe('pending');
+  expect((await resumed.receipt(safe,31337,signal())).completed).toEqual([tokenId]);
+  expect(requests.filter(m=>m==='eth_sendTransaction')).toHaveLength(sendsBeforePasskey+1);
+  expect(await client.readContract({address:token,abi:tokenAbi,functionName:'balanceOf',args:[active]})).toBe(123n);
+  await client.waitForTransactionReceipt({hash:await wallet.writeContract({account:accounts[0],address:token,abi:tokenAbi,functionName:'mint',args:[safe,123n]})});
   const discovery = {
+    withdrawal,
     discover: async () => ({ addresses: [safe], issues: [] }), // Index hint; all authority is verified on-chain.
     checkAccess: checkExternalAccess,
     recovery: { read: readGuidedRecovery, perform: performGuidedRecovery, receipts: checkGuidedRecoveryReceipts },
@@ -132,10 +167,10 @@ it.each(proxies)('UI → fresh passkey $version Safe → guardian → seven-day 
       scans++;
       expect((await checkExternalAccess(account, active, abort)).ready).toBe(true);
       const balance = await client.readContract({ address: token, abi: tokenAbi, functionName: 'balanceOf', args: [account] });
-      return { account, checkedAt: new Date().toISOString(), networks: [{ id: '31337', chainId: 31337, name: 'Foundry', symbol: 'ETH', status: 'complete', items: [{ name: 'TEST', balance: balance.toString() }] }] };
+      return { account, checkedAt: new Date().toISOString(), networks: [{ id: '31337', chainId: 31337, name: 'Foundry', symbol: 'ETH', status: 'complete', items: [{id:tokenId,name:'TEST',balance:balance.toString(),selectable:true},{id:nativeId,name:'ETH',balance:'1',selectable:true}] }] };
     },
   };
-  let ui = guidedUi(discovery, provider);
+  let ui = guidedUi(discovery, provider, fetcher);
   const idle = () => !ui.state.busy && !ui.state.recoverySending;
   const screen = async (name: string) => ui.waitFor(() => ui.state.screen === name && idle());
   async function connect() {
@@ -183,7 +218,7 @@ it.each(proxies)('UI → fresh passkey $version Safe → guardian → seven-day 
     // Lose all controller memory, as on page reload. The pending target and delay
     // must be rediscovered from the chain without signing the approval again.
     const signaturesBeforeReload = requests.filter(v => v.startsWith('eth_signTypedData')).length;
-    ui.dispose(); ui = guidedUi(discovery, provider);
+    ui.dispose(); ui = guidedUi(discovery, provider, fetcher);
     await ui.click('method', 'wallet'); await connect(); await screen('recover-access');
     await ui.click('action', 'no-passkey'); await screen('recovery-network');
     expect(ui.state.recoveryOwner.toLowerCase()).toBe(accounts[2].toLowerCase());
@@ -204,22 +239,20 @@ it.each(proxies)('UI → fresh passkey $version Safe → guardian → seven-day 
     await expect(client.call({ account: accounts[0], to: safe, data: encodeFunctionData({ abi: safeAbi, functionName: 'execTransaction', args: [...probe, await passkeySignature(probe)] }) })).rejects.toThrow();
     await ui.click('action', 'change-source'); active = accounts[2]; await connect(); await screen('assets');
     expect(scans).toBe(1); expect(ui.html).toContain(safe); expect(ui.html).toContain('TEST');
-    // Local contract withdrawal proves recovered control; guided withdrawal UI is
-    // still demonstrative and is intentionally not claimed as a real transfer.
-    async function ownerCall(to: Address, data: Hex, value = 0n, owner = accounts[2]) {
-      const signatures = concatHex([pad(owner, { size: 32 }), pad('0x', { size: 32 }), '0x01']);
-      const args = [...argsFor(to, data, value), signatures] as const;
-      await client.simulateContract({ account: owner, address: safe, abi: safeAbi, functionName: 'execTransaction', args });
-      const hash = await wallet.writeContract({ account: owner, address: safe, abi: safeAbi, functionName: 'execTransaction', args });
-      expect((await client.waitForTransactionReceipt({ hash })).status).toBe('success');
-    }
-    await expect(ownerCall(accounts[3], '0x', 1n, accounts[1])).rejects.toThrow();
     const recipientBefore = await client.getBalance({ address: accounts[3] });
-    await ownerCall(token, encodeFunctionData({ abi: tokenAbi, functionName: 'transfer', args: [accounts[3], 123n] }));
-    await ownerCall(accounts[3], '0x', 10n ** 18n);
+    await expect(withdrawal.prepare({account:safe,chainId:31337,payer:accounts[1],destination:accounts[3],method:'wallet',ids:[tokenId]},signal())).rejects.toThrow(/não controla/);
+    await ui.click('action','next');await screen('fees');await ui.click('action','next');await screen('destination');
+    ui.destination(accounts[3]);await ui.click('action','next');await screen('move');expect(ui.state.withdrawal.status).toBe('ready');
+    for(let part=0;part<2;part++) {
+      await ui.click('action','next');await ui.waitFor(()=>idle()&&ui.state.withdrawal?.status==='confirmed');
+      expect(ui.state.error).toBe('');
+      await ui.click('action','next');await screen('move');
+    }
+    expect(ui.state.withdrawal.status).toBe('empty');await ui.click('action','next');await screen('done');
+    expect(ui.state.withdrawalReceipts).toHaveLength(2);
     expect(await client.getBalance({ address: safe })).toBe(0n);
     expect(await client.getBalance({ address: accounts[3] })).toBe(recipientBefore + 10n ** 18n);
     expect(await client.readContract({ address: token, abi: tokenAbi, functionName: 'balanceOf', args: [accounts[3]] })).toBe(123n);
     expect(await client.readContract({ address: token, abi: tokenAbi, functionName: 'balanceOf', args: [safe] })).toBe(0n);
   } finally { ui.dispose(); }
-}, 120_000);
+}, 180_000);
