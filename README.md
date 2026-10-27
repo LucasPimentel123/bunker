@@ -3,82 +3,82 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/usePicnic/bunker/actions/workflows/check.yml"><img src="https://github.com/usePicnic/bunker/actions/workflows/check.yml/badge.svg" alt="Verification"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-ccff00?labelColor=24221e" alt="MIT license"></a>
-</p>
-
-<p align="center">
   <strong>An independent way back to your Picnic account.</strong><br>
-  Start with the Bunker skill. Run locally. Keep your keys with you.
+  Open source · Runs locally · Your keys stay with you
 </p>
 
 <p align="center">
-  <a href="#get-started">Get started</a> ·
-  <a href="#how-it-works">How it works</a> ·
-  <a href="#verify-it-yourself">Tests</a> ·
-  <a href="docs/architecture.md">Architecture</a>
+  <a href="#get-started">Get started</a> &nbsp; / &nbsp;
+  <a href="#how-it-works">How it works</a> &nbsp; / &nbsp;
+  <a href="#for-contributors">For contributors</a>
 </p>
 
----
-
-Bunker helps you find and regain control of your Picnic accounts through your
-existing **passkey** or a **connected wallet**, without a Picnic login or backend.
-It reads account ownership and recovery rules directly from the blockchain.
-
-**Development preview.** Passkey discovery and guardian recovery are implemented.
-The guided withdrawal screen is still a demonstration. A separate recovery
-workbench implements asset exits; coverage varies by asset and deployment.
-[What is tested, and what is not →](docs/coverage.md)
-
-## How it works
-
-1. **Find your account.** Use a passkey or connect a wallet linked to your Picnic account.
-2. **Restore access if needed.** Use the configured guardian when the passkey is unavailable.
-   The contract enforces its waiting period; Bunker shows it before authorization.
-3. **Prepare your next step.** Review the assets, destination and wallet paying network fees.
-   Each real transaction requires your approval in your wallet.
-
-A recovery guardian must **never** become the new owner. Bunker checks this before
-signing and sending. A public address by itself does not grant access to an account.
+Bunker helps you regain control of your Picnic accounts with an existing
+**passkey** or **connected wallet**, without a Picnic login or backend.
 
 ## Get started
 
-**Use the [Bunker skill](skills/bunker/SKILL.md) to open Bunker locally.**
-The agent handles setup and troubleshooting; you use the guided interface and
-confirm wallet and passkey requests yourself.
+Copy this into your AI assistant:
 
-In an agent that supports skills, ask:
+```text
+Please help recover Picnic: github.com/usePicnic/bunker
+```
 
-> Install the Bunker skill from `usePicnic/bunker`, path `skills/bunker`.
-> Then prepare and open Bunker locally.
+Your assistant prepares Bunker on your computer and opens the guided interface.
+You choose your account and confirm passkey and wallet requests yourself.
 
-The agent should resolve the selected revision to a full commit and keep it fixed
-for your session. This is currently a development preview.
-Installing from this repository is not the same as verifying a signed production
-release; that distribution is still to come.
-
-Once the skill is available to your agent, start with:
-
-> Use the Bunker skill to open Bunker locally and help me recover access to my Picnic account.
-
-The same folder works as an [Agent Skills](https://agentskills.io/specification)
-package or as instructions a local agent reads directly. No OpenAI or Anthropic
-API is required by the skill. Use `$bunker` in Codex, `/bunker` in Claude Code,
-or point another agent at `skills/bunker/SKILL.md`.
-[Installation and capability requirements for different agents →](docs/agent-compatibility.md)
-
-The skill checks the source and prerequisites, builds the local app, presents any
-certificate/domain changes for approval, starts the server and checks it before
-opening the guided flow. It can resume an existing installation and remove its
-local configuration when you ask. No seed, private key or passkey export belongs
+**macOS for now.** Your assistant checks the prerequisites and asks before
+changing local HTTPS settings. Never share a seed, private key or passkey export
 in the chat.
 
-The current local host is **macOS**, with **Node.js 22.12+**, npm, Git and OpenSSL.
-The agent checks these for you. A phone may participate through a supported wallet
-or passkey provider, but is not yet a supported local host.
+> [!NOTE]
+> **Development preview.** Account discovery and guardian recovery are implemented.
+> Guided withdrawal is still demonstrative. A separate workbench implements asset
+> exits, with coverage that varies by asset and deployment.
+
+## How it works
+
+| **01 · Find your account** | **02 · Restore access** | **03 · Prepare your next step** |
+| :--- | :--- | :--- |
+| Use your passkey or a wallet linked to your Picnic account. | If needed, recover through your configured guardian. Bunker shows the on-chain waiting period before authorization. | Review assets, destination and network fees. Every real transaction requires your approval in your wallet. |
+
+A recovery guardian can never become the new owner. Bunker verifies account
+control on-chain; knowing an address alone does not grant access.
 
 <details>
-<summary><strong>Manual setup for contributors</strong></summary>
+<summary><strong>Independence and limits</strong></summary>
+
+- **No keys in Bunker.** Never paste a seed, private key, password or OTP into the app.
+- **No Picnic backend.** Public RPCs provide chain data. Some discovery routes use
+  the public Safe index as an untrusted hint and verify ownership on-chain.
+- **External wallet for gas.** Passkey users also need a wallet funded on the relevant networks.
+- **Existing authority is required.** An inaccessible Magic account without an
+  exported wallet or another configured recovery method remains a limitation.
+- **On-chain restrictions still apply.** Delays, token restrictions, protocol pauses
+  and liquidity constraints cannot be bypassed.
+
+</details>
+
+<details>
+<summary><strong>For AI assistants</strong></summary>
+
+Read [the Bunker skill](skills/bunker/SKILL.md) and follow its workflow directly.
+Resolve the source to a fixed commit, check the local environment, then guide
+setup and open the UI. Do not require the user to install a skill or learn a
+vendor-specific command first. Native skill installation is optional.
+
+See [agent compatibility](docs/agent-compatibility.md) for host capabilities and
+handoffs. This remains a development preview, not an authenticated production release.
+
+</details>
+
+## For contributors
+
+[Contribution guide](CONTRIBUTING.md) · [Architecture](docs/architecture.md) ·
+[Asset coverage](docs/coverage.md) · [Third-party notices](NOTICE.md)
+
+<details>
+<summary><strong>Manual setup and development targets</strong></summary>
 
 ```sh
 git clone https://github.com/usePicnic/bunker.git
@@ -98,10 +98,6 @@ Once running, open the guided flow at
 **https://bunker.usepicnic.com:8443/designs/guided.html?design=segments**.
 This is a local address configured by setup, not a hosted service.
 
-</details>
-
-<details>
-<summary><strong>Other development targets</strong></summary>
 
 | Target | Purpose | Start here |
 | --- | --- | --- |
@@ -114,48 +110,14 @@ extension and read-only proof do not broadcast transfers.
 
 </details>
 
-## Verify it yourself
+---
 
-Install [Foundry/Anvil](https://getfoundry.sh/) for local contract tests.
+<p align="center">
+  Made by <a href="https://usepicnic.com"><strong>Picnic</strong></a><br>
+  <sub>MIT for original code. Third-party fixtures retain their upstream licenses.</sub>
+</p>
 
-```sh
-npm run check
-npm run test:skill
-npm run test:bunker:e2e
-npm test
-```
-
-The recovery lifecycle creates a fresh test passkey and Safe, authorizes recovery
-through the guided controller, advances the local chain past the waiting period,
-and verifies that the new owner can move test funds. It also checks rejection,
-missing gas, resuming after losing UI state, and exclusion of guardians as new owners.
-
-These tests use real contract bytecode on a disposable local chain and software
-WebAuthn credentials. They do not replace real browser, biometric or wallet-extension
-acceptance tests. [Read the test coverage and limits →](docs/bunker-e2e.md)
-
-Optional fork tests run with `npm run test:fork`. All writes stay inside local Anvil.
-
-## Independence and limits
-
-- **No keys in Bunker.** Never paste a seed, private key, password or OTP into the app.
-- **No Picnic backend.** Public RPCs provide chain data. Some discovery routes use
-  the public Safe index as an untrusted hint and verify ownership on-chain.
-- **External wallet for gas.** Passkey users also need a wallet funded on the relevant networks.
-- **WalletConnect is optional.** QR pairing uses its relay; injected wallets do not.
-- **Existing authority is required.** An inaccessible Magic account without an
-  exported wallet or another configured recovery method remains a limitation.
-- **On-chain restrictions still apply.** Delays, token restrictions, protocol pauses
-  and liquidity constraints cannot be bypassed.
-
-## Contributing
-
-Keep personal wallet addresses, RPC credentials and local TLS material out of
-commits. Use synthetic addresses and disposable local accounts in tests.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks.
-
-[Architecture](docs/architecture.md) · [Asset coverage](docs/coverage.md) ·
-[Third-party notices](NOTICE.md) · [Start with the Bunker skill](skills/bunker/SKILL.md)
-
-Made by [Picnic](https://usepicnic.com). MIT for original code; third-party fixtures
-retain their upstream licenses.
+<p align="center">
+  <a href="https://github.com/usePicnic/bunker/actions/workflows/check.yml"><img src="https://github.com/usePicnic/bunker/actions/workflows/check.yml/badge.svg" alt="Verification"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-ccff00?style=flat-square&amp;labelColor=24221e" alt="MIT license"></a>
+</p>
