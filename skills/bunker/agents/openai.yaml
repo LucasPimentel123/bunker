@@ -1,4 +1,4 @@
 interface:
   display_name: "Picnic Bunker"
-  short_description: "Abra o Bunker local e recupere seu acesso à Picnic"
-  default_prompt: "Use $bunker para preparar e abrir a interface local onde vou recuperar o acesso à minha conta Picnic."
+  short_description: "Prepare, verifique e abra o Bunker local"
+  default_prompt: "Use $bunker para configurar, verificar e abrir o Bunker no meu computador. Vou seguir a recuperação pela interface."
