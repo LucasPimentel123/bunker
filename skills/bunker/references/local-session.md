@@ -55,7 +55,7 @@ does not certify the browser, authenticator, app bundle or publisher.
 The server's `/config` reports a read-only RPC proxy. This does **not** mean the
 whole guided app is read-only: guardian recovery uses the connected wallet and
 can submit real transactions. Do not tell the user that setup implies simulation-only
-behavior. Guided withdrawal remains demonstrative in this version.
+behavior. Guided withdrawals also submit real transactions approved by the user.
 
 For a missing prerequisite, explain what is missing; do not retry unchanged commands.
 For an RPC failure, retry the read or use another supported independent HTTPS RPC.

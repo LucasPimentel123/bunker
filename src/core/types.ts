@@ -59,9 +59,12 @@ export type PreparedAction = {
   receives?: Receive[];
   nfts?: NftReceive[];
   queued?: { module: Address; txHash: Hex }[];
+  moduleExecution?: { safe: Address; module: Address };
   // Recipients that must never receive funds (e.g. known recovery guardians).
   // Fresh guardians of the source Safe are added again immediately before sending.
   forbiddenRecipients?: Address[];
+  // Funds may go to the payer/guardian; this NEVER relaxes recovery-owner rules.
+  allowGuardianRecipient?: boolean;
   // Includes delayed destinations whose funds are only queued in this action.
   destinations?: Address[];
   revalidate?: () => Promise<void>;

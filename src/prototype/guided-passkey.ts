@@ -1,4 +1,4 @@
-import { assertionFrom, base64url, requestPasskey } from '../proof/passkey';
+import { assertionFrom, base64url, requestPasskey, encodeAssertion, contractSignature } from '../proof/passkey';
 import { discoveryChallenge, identifyPasskey } from '../proof/passkeyDiscovery';
 import { discoverCandidateAccounts, keyId, resolveDiscovery, startDiscovery, type DiscoverySession } from '../proof/discoveryFlow';
 import type { DiscoveryNetwork } from '../proof/discoverAccounts';
@@ -52,4 +52,26 @@ export async function confirmPasskey(signal: AbortSignal, progress: Progress) {
   const key = await identifyPasskey(previous.session.proof, second, BUNKER_ORIGIN);
   if (!resolveDiscovery(previous.session, previous.networks).matches.some(k => keyId(k) === keyId(key))) throw new Error('A passkey não corresponde às contas encontradas.');
   return lookup({ ...previous.session, proof: second, confirmedKey: key }, signal, progress, previous.hint);
+}
+
+// Captured identity is rechecked after every asynchronous boundary. Discovery
+// signatures are never reused to authorize transfers.
+export function withdrawalIdentity(account: string) {
+  const session = pending, resolution = session && resolveDiscovery(session.session, session.networks);
+  if (!session || !resolution?.key || !session.networks.some(n => n.accounts.some(a => a.diagnosis.snapshot.address.toLowerCase() === account.toLowerCase() && keyId(a.publicKey) === keyId(resolution.key!)))) throw Error('Identifique a passkey desta conta novamente.');
+  return { key: resolution.key, credentialId: session.session.proof.credentialId, assertCurrent: () => { if (pending !== session) throw Error('A passkey mudou. Prepare novamente.'); } };
+}
+export async function authorizeWithdrawal(identity: ReturnType<typeof withdrawalIdentity>, hash: import('viem').Hex, snapshot: import('../core/types').AccountSnapshot, client: import('viem').PublicClient, signal: AbortSignal) {
+  const { diagnose, verifyOnChain } = await import('../proof/simulation');
+  identity.assertCurrent();signal.throwIfAborted();
+  const current = await diagnose(client, snapshot.address, snapshot.chainId);
+  const signer = current.signers.find(s => s.x.toLowerCase() === identity.key.x.toLowerCase() && s.y.toLowerCase() === identity.key.y.toLowerCase());
+  if (!signer || current.snapshot.nonce !== snapshot.nonce) throw Error('A passkey ou o nonce da conta mudou. Prepare novamente.');
+  identity.assertCurrent();signal.throwIfAborted();
+  const credential = await requestPasskey(hash, identity.credentialId, BUNKER_ORIGIN, signal);
+  const signature = await encodeAssertion(assertionFrom(credential), hash, identity.key, BUNKER_ORIGIN);
+  identity.assertCurrent();signal.throwIfAborted();
+  await verifyOnChain(client, signer.address, hash, signature, current.snapshot.block);
+  identity.assertCurrent();signal.throwIfAborted();
+  return { owner: signer.address, signature: contractSignature(signer.address, signature) };
 }

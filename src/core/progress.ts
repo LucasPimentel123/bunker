@@ -52,6 +52,11 @@ export function parseProgress(text: string): Progress {
         if (![nft.collection, nft.from, nft.recipient].every(a => isAddress(String(a))) || !/^\d{1,78}$/.test(String(nft.tokenId)) || BigInt(String(nft.tokenId)) >= 2n ** 256n) throw new Error("Invalid NFT receipt expectation");
         return { collection: String(nft.collection) as `0x${string}`, from: String(nft.from) as `0x${string}`, recipient: String(nft.recipient) as `0x${string}`, tokenId: String(nft.tokenId) };
       });
+      if (e.moduleExecution) {
+        const value=e.moduleExecution as Record<string,unknown>;
+        if(!isAddress(String(value.safe))||!isAddress(String(value.module)))throw Error("Invalid module execution expectation");
+        expectation.moduleExecution={safe:String(value.safe) as `0x${string}`,module:String(value.module) as `0x${string}`};
+      }
       const queued = list(e.queued);
       if (queued) expectation.queued = queued.map(raw => {
         const entry = (raw ?? {}) as Record<string, unknown>;

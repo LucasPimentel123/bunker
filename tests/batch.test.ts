@@ -115,7 +115,11 @@ describe("batch planning", () => {
     const eoa = planBatch({ snapshot: snap({ version: "EOA" }), destination: dest, facts, multisend: MS141 });
     expect(eoa.unavailable).toBe("eoa"); expect(eoa.parts).toEqual([]);
     expect(eoa.entries.filter(e => e.status === "included")).toHaveLength(0);
-    expect(planBatch({ snapshot: snap(), destination: dest, facts }).unavailable).toBe("multisend");
+    const unbatched = planBatch({ snapshot: snap(), destination: dest, facts });
+    expect(unbatched.unavailable).toBeUndefined();
+    expect(unbatched.parts.every(part => part.length === 1)).toBe(true);
+    expect(unbatched.entries.filter(e => e.status === "included").every(e => e.calls.length === 1)).toBe(true);
+    expect(planBatch({snapshot:snap(),destination:guardian,facts,multisend:MS141,guardians:[guardian],allowGuardianRecipient:true}).destination).toBe(guardian);
     expect(() => planBatch({ snapshot: snap(), destination: guardian, facts, multisend: MS141, guardians: [guardian] })).toThrow(/guardian/);
     expect(() => planBatch({ snapshot: snap({ recoveries: [{ module: delay, runtimeHash: "0x", supported: true, guardians: [guardian], threshold: 1n, nonce: 0n, pending: { guardiansApprovalCount: 0n, newThreshold: 0n, executeAfter: 0n, newOwners: [] } }] }), destination: guardian, facts, multisend: MS141 })).toThrow(/guardian/);
     expect(() => planBatch({ snapshot: snap(), destination: safe, facts, multisend: MS141 })).toThrow(/source/);

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 /** Executes the shipped controller and its click/input handlers. This is a DOM
  * adapter, not a browser renderer: layout, biometrics and extension UI need their
  * own browser/device checks. Nothing is injected into the distributed app. */
-export function guidedUi(discovery: unknown, provider: unknown) {
+export function guidedUi(discovery: unknown, provider: unknown, fetcher?: typeof fetch) {
   const nodes = new Map<string, any>();
   function node(key: string): any {
     if (!nodes.has(key)) nodes.set(key, {
@@ -34,7 +34,7 @@ export function guidedUi(discovery: unknown, provider: unknown) {
     setTimeout: (fn: () => void, ms: number) => {
       const timer = setTimeout(fn, ms).unref(); timers.add(timer); return timer;
     }, clearTimeout,
-    fetch: () => { throw Error('Unexpected UI network request: this test allows only the local chain adapter'); },
+    fetch: fetcher ?? (() => { throw Error('Unexpected UI network request: this test allows only the local chain adapter'); }),
     navigator: { clipboard: { writeText: async () => {} } },
   });
   const source = readFileSync(new URL('../../public/designs/assets/guided-live.js', import.meta.url), 'utf8');
@@ -50,6 +50,13 @@ export function guidedUi(discovery: unknown, provider: unknown) {
       if (!tag || /\bdisabled\b/.test(tag)) throw Error(`Missing or disabled button: ${attribute}=${value}\n${scene.innerHTML}`);
       const dataset = { [attribute.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())]: value };
       await root.events.click({ target: { closest: () => ({ dataset, disabled: false }) }, preventDefault() {} });
+    },
+    destination(value: string) {
+      if(!scene.innerHTML.includes('id="pb-recipient"'))throw Error('Destination input not rendered');
+      scene.querySelector('.pb-address').value=value;
+      root.events.input({target:{value,classList:{contains:(v:string)=>v==='pb-address'}}});
+      const disabled=scene.querySelector('[data-action=next]').disabled;
+      scene.innerHTML=scene.innerHTML.replace(/<button\b[^>]*data-action="next"[^>]*>/,(tag:string)=>tag.replace(/\sdisabled\b/g,'').replace(/>$/,disabled?' disabled>':'>'));
     },
     owner(value: string) {
       if (!scene.innerHTML.includes('id="pb-owner"')) throw Error('Recovery owner input not rendered');

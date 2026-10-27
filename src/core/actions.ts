@@ -169,6 +169,7 @@ export function receiptExpectation(action: PreparedAction, hash?: Hex): ReceiptE
     ...(native.length && action.kind === "safe" ? { native: native.map(r => ({ recipient: r.recipient, minimum: r.minimum.toString() })) } : {}),
     ...(action.nfts?.length ? { nfts: action.nfts.map(nft => ({ ...nft, tokenId: nft.tokenId.toString() })) } : {}),
     ...(action.queued?.length ? { queued: action.queued } : {}),
+    ...(action.moduleExecution ? { moduleExecution: action.moduleExecution } : {}),
   };
 }
 // Aggregate so two children paying the same asset to one recipient are summed.
@@ -181,11 +182,12 @@ function balanceEffects(action: PreparedAction) {
   }
   return [...map.values()];
 }
-export type SendHooks = { onSubmitted: (hash: Hex, expectation?: ReceiptExpectation) => void; onSigning?: (stage: "wallet" | "network" | "validation" | "simulation" | "signature" | "transaction") => void };
+export type SendHooks = { preflightGas?: boolean; authorizeContract?: (hash: Hex, snapshot: AccountSnapshot) => Promise<{ owner: Address; signature: Hex }>; onSubmitted: (hash: Hex, expectation?: ReceiptExpectation) => void; onSigning?: (stage: "wallet" | "network" | "validation" | "simulation" | "signature" | "transaction") => void };
 export async function sendAction(
   client: PublicClient, provider: EIP1193Provider, action: PreparedAction,
   hooks: SendHooks["onSubmitted"] | SendHooks,
 ) {
+  const authorizeContract = typeof hooks === "function" ? undefined : hooks.authorizeContract;
   const { onSubmitted, onSigning } = typeof hooks === "function" ? { onSubmitted: hooks, onSigning: undefined } : hooks;
   assertActionShape(action);
   assertAllowedRecipients(action, action.forbiddenRecipients ?? []);
@@ -222,7 +224,17 @@ export async function sendAction(
     assertSupportedSafe(snapshot);
     if (snapshot.nonce !== action.safeNonce) throw new Error("Safe nonce changed. Inspect and review again");
     // Fresh guardians of this exact Safe, even when they are not connected.
-    assertAllowedRecipients(action, snapshot.recoveries.flatMap(r => r.guardians));
+    if (!action.allowGuardianRecipient || action.recovery) assertAllowedRecipients(action, snapshot.recoveries.flatMap(r => r.guardians));
+    if (authorizeContract) {
+      if (snapshot.threshold !== 1n) throw Error("Contract-owner authorization requires threshold 1");
+      await assertSigner();
+      onSigning?.("signature");
+      const authorization = await authorizeContract(await safeHash(client, action), snapshot);
+      if (!snapshot.owners.some(owner => same(owner, authorization.owner))) throw Error("Contract signer is not a current Safe owner");
+      const current = await inspectAccount(client, action.account, action.chainId);
+      if (current.nonce !== action.safeNonce || current.threshold !== 1n || !current.owners.some(owner => same(owner, authorization.owner))) throw Error("Safe authority changed during signing");
+      call = {to: action.account, value: 0n, data: encodeFunctionData({abi: safeAbi, functionName: "execTransaction", args: [...safeArgs(action.call, operationOf(action)), authorization.signature]})};
+    } else {
     const owner = snapshot.owners.some(o => same(o, sender));
     // Threshold 1 and the connected wallet is a current owner: it sends the
     // execTransaction itself, so the pre-validated msg.sender signature
@@ -240,6 +252,7 @@ export async function sendAction(
       });
     }
     call = await safeExecution(client, action, sender, signature, executor);
+    }
   }
   // A direct eth_call of a multisend outside the Safe's delegatecall context
   // would simulate the wrong thing; batches are simulated as the whole Safe execution.
@@ -247,11 +260,19 @@ export async function sendAction(
   if (action.kind === "safe" && operationOf(action) === 0) await client.call({ account: action.account, ...action.call });
   await client.call({ account: sender, ...call });
   const gas = await client.estimateGas({ account: sender, ...call });
+  if (typeof hooks !== "function" && hooks.preflightGas) {
+    const balance=await client.getBalance({address:sender}), required=call.value+gas*120n/100n*(await client.getGasPrice())*2n;
+    if(balance<required)throw Object.assign(Error("O saldo da carteira não cobre a taxa estimada. Adicione saldo e prepare novamente."),{code:"INSUFFICIENT_GAS",balance:balance.toString(),required:required.toString()});
+  }
   const effects = balanceEffects(action);
   const before = await Promise.all(effects.map(effect => receivedBalance(client, effect)));
   await assertFresh(client, action);
   await action.revalidate?.();
   const expectation = receiptExpectation(action, action.kind === "safe" ? await safeHash(client, action) : undefined);
+  if (action.kind === "safe") {
+    const latest = await inspectAccount(client, action.account, action.chainId);
+    if (latest.nonce !== action.safeNonce) throw Error("Safe nonce changed before submission");
+  }
   await assertSigner();
   onSigning?.("transaction");
   const hash = await wallet.sendTransaction({ account: sender, chain: null, ...call, gas: gas * 120n / 100n });

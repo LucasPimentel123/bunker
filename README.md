@@ -38,9 +38,10 @@ changing local HTTPS settings. Never share a seed, private key or passkey export
 in the chat.
 
 > [!NOTE]
-> **Development preview.** Account discovery and guardian recovery are implemented.
-> Guided withdrawal is still demonstrative. A separate workbench implements asset
-> exits, with coverage that varies by asset and deployment.
+> **Development preview.** Account discovery, guardian recovery and guided withdrawals
+> are live. You approve signatures and transactions in your passkey or wallet.
+> Supported routes vary by asset and deployment; queued withdrawals still need
+> their on-chain waiting period and a later confirmation.
 
 ## How it works
 
