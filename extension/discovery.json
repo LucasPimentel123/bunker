@@ -1,0 +1,4 @@
+{
+  "origin": "https://api.safe.global",
+  "chains": { "1": "eth", "100": "gno", "137": "pol" }
+}
