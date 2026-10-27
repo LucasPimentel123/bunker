@@ -32,7 +32,9 @@ a patched release. Do not bypass the audit gate to accommodate a dependency.
 
 Contract tests need Foundry/Anvil. Use disposable test keys and local chains;
 never use a customer's account to validate a write path. Fork tests are optional
-(`npm run test:fork`) and execute all writes locally.
+(`npm run test:fork`) and execute all writes locally. See the
+[E2E coverage and limits](docs/bunker-e2e.md) for the recovery lifecycle and the
+difference between contract/controller tests and real browser acceptance.
 
 Keep these invariants intact:
 
