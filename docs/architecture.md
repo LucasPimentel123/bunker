@@ -17,7 +17,7 @@ can read `SKILL.md` directly; `agents/openai.yaml` is an optional display adapte
 The agent stops for explicit approval of the concrete certificate/domain changes.
 The user then performs all passkey and wallet confirmations in the UI. The skill
 does not hold keys, sign or submit transactions for them. Guardian recovery is real;
-guided withdrawal remains demonstrative. Local source builds are not authenticated
+guided withdrawal requires real user-approved transactions. Local source builds are not authenticated
 production releases. A signed, independently verifiable distribution is still needed.
 
 The Bunker HTTPS profile proxies allowlisted read RPCs and listens on loopback only.
@@ -72,7 +72,16 @@ All three asset views use the same flat row model. Clicking a Move funds row ope
 
 `core/discovery.ts` derives the original Picnic Safe (EOA owner, nonce zero, pinned factory/singleton/module setup) and verifies deployed singleton/runtime and current ownership on Gnosis before `useConnectedAccount` selects it. This distinguishes the connected signer from the account holding assets; the source remains read-only and follows the connected signer. Switching wallet/RPC cancels stale resolution, and diagnosis cannot continue while it is pending. An absent predicted contract leaves the EOA selected; a failed verification is disclosed. This route does not claim general/passkey Safe enumeration.
 
-Card discovery independently queries the original deterministic Gnosis Pay address and incoming/outgoing ERC-20 transfer counterparties of the controller, plus outgoing transfers of the original card. Incoming transfers matter for migrated cards that have withdrawn to the controller but were never directly funded by it. Up to 2,000 newest logs per query and 64 candidate addresses are inspected, with limits/errors disclosed. Candidate proxies are screened by singleton then validated through `inspectCard`; transfer history alone never authorizes a card. Only cards with a verified v5 Delay and matching controller enter the existing session scan/selection flow automatically, and fresh controller/queue checks still happen before review. Discovery is JSON-RPC only: neither Picnic/Mongo, the Gnosis Pay API nor Safe Transaction Service is a runtime dependency. Migrated cards with no matching transfer evidence and custom deployments still need the explicit address fallback.
+Card discovery uses the deterministic original address plus `EnabledModule(address)`
+events. Gnosis Pay v5 emits the controller in non-indexed event data, so discovery
+reads adaptive block ranges and filters locally. It never uses token-transfer
+counterparties or a 64-address cutoff. Pages at the result cap are split rather
+than truncated; completed ranges and matching module hints are checkpointed per
+account/RPC context. A bounded pass can be resumed from the guided Gnosis details.
+Every event emitter must be a recognized v5 Delay proxy, and its current avatar,
+Safe singleton, enabled module and controller relationship are checked before
+admitting the card. Events are hints, never authority. Unread history and failed
+checks remain explicitly partial. This discovery requires no Picnic/Gnosis Pay API.
 
 ReadPool retries a transiently failing read unit at most twice, using per-request timeouts of 20, 40 and 60 seconds and bounded backoff/failover. Successful diagnosis units, batches and other networks are never restarted by automatic retry. Multi-request account snapshots repeat together to preserve their consistency. Chain identity is verified for each endpoint before its data is used. Reverts and deterministic validation failures are not retried; stale state and oversized payloads retain their separate repin/split paths. An exhausted transport failure is not split into a second retry tree. A sole RPC asking for a cooldown longer than the bounded backoff is left unverified. Concurrent retry progress is exposed to the scan UI and cleared on completion; cancellation suppresses stale output. Missing token precision keeps the result partial and the amount in raw units. Refresh diagnosis still deliberately refreshes all selected network data.
 
@@ -111,3 +120,17 @@ Basket batch migration withdraws only the pinned Polygon BRL contract, forwards 
 
 
 WalletConnect's logger is pinned to `@walletconnect/logger@3.0.2` (Pino 10) so its browser context handling is compatible with the secure logger API. A Pino-only override on logger 2.1.2 crashes provider initialization and leaves ConnectKit's QR placeholder waiting indefinitely; see upstream [walletconnect-utils#273](https://github.com/WalletConnect/walletconnect-utils/issues/273). Production-browser validation checks that the relay opens, a real WalletConnect v2 URI is rendered, and Copy returns that URI.
+
+
+## Guided withdrawal
+
+`prototype/guided-withdrawal.ts` binds each prepared transaction to the verified
+inventory selection, source, network, payer and destination. It uses fresh batch
+facts, route screening and the existing action/receipt pipeline. Passkey entry
+connects the gas payer before scanning assets. A fresh transaction-specific
+assertion signs the locally computed Safe hash; a discovery assertion never
+moves funds. The pending transaction journal stores a hash of the submitted
+calldata and receipt expectations before waiting, and verifies the actual
+transaction on resume. Partial results and queued card requests never count as
+completed withdrawals. The guardian-as-new-owner prohibition remains absolute;
+allowing a guardian/payer to receive funds does not change recovery rules.

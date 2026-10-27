@@ -177,19 +177,20 @@ const transfer = (token: Address | null, to: Address, amount: bigint): Call => t
 // parts. Nothing selected is dropped silently: each fact yields exactly one
 // entry stating whether it is in the batch, needs an individual step, or has
 // nothing to move now.
-export function planBatch(options: { snapshot: AccountSnapshot; destination: string; facts: readonly BatchFact[]; multisend?: Address; guardians?: readonly string[]; budget?: bigint }): BatchPlan {
+export function planBatch(options: { snapshot: AccountSnapshot; destination: string; facts: readonly BatchFact[]; multisend?: Address; guardians?: readonly string[]; allowGuardianRecipient?: boolean; budget?: bigint }): BatchPlan {
   const { snapshot, facts } = options;
   const destination = address(options.destination);
   if (same(destination, snapshot.address)) throw new Error("Destination must differ from the source account");
-  if ([...options.guardians ?? [], ...snapshot.recoveries.flatMap(r => r.guardians)].some(g => same(g, destination))) throw new Error("The destination is a recovery guardian of this account. Choose a wallet that is not a guardian");
-  const unavailable = snapshot.version === "EOA" ? "eoa" as const : snapshot.warnings.some(w => w.includes("transactions disabled")) ? "unsupported" as const : !options.multisend ? "multisend" as const : undefined;
+  if (!options.allowGuardianRecipient && [...options.guardians ?? [], ...snapshot.recoveries.flatMap(r => r.guardians)].some(g => same(g, destination))) throw new Error("The destination is a recovery guardian of this account. Choose a wallet that is not a guardian");
+  const unavailable = snapshot.version === "EOA" ? "eoa" as const : snapshot.warnings.some(w => w.includes("transactions disabled")) ? "unsupported" as const : undefined;
   const entries = facts.map(fact => planFact(fact, snapshot, destination));
   if (unavailable) for (const e of entries) if (e.status === "included") Object.assign(e, { status: "individual", calls: [], callLabels: [], receives: [], nfts: [], queued: [], gas: 0n });
+  if (!options.multisend && !unavailable) for (const e of entries) if (e.status === "included" && e.calls.length > 1) Object.assign(e, {status:"individual",calls:[],callLabels:[],receives:[],queued:[],nfts:[],notes:[...e.notes,"Esta rota precisa de MultiSend verificado nesta rede."]});
   const parts: string[][] = [];
   let current: string[] = [], gas = 0n, calls = 0;
   const budget = options.budget ?? PART_GAS_BUDGET;
   for (const e of entries.filter(e => e.status === "included")) {
-    if (current.length && (gas + e.gas > budget || calls + e.calls.length > MAX_BATCH_CALLS)) { parts.push(current); current = []; gas = 0n; calls = 0; }
+    if (current.length && (!options.multisend || gas + e.gas > budget || calls + e.calls.length > MAX_BATCH_CALLS)) { parts.push(current); current = []; gas = 0n; calls = 0; }
     current.push(e.id); gas += e.gas; calls += e.calls.length;
   }
   if (current.length) parts.push(current);
@@ -289,12 +290,12 @@ export function batchPartAction(options: {
   reread?: () => Promise<BatchFact[]>; label: string;
 }): PreparedAction {
   const { snapshot, plan, part } = options;
-  if (plan.unavailable || !plan.multisend) throw new Error("A Safe batch is not available for this account on this network");
+  if (plan.unavailable) throw new Error("A Safe batch is not available for this account on this network");
   const ids = plan.parts[part];
   if (!ids?.length) throw new Error("Nothing to include in this part");
   const entries = ids.map(id => plan.entries.find(e => e.id === id)!);
   const calls = entries.flatMap(e => e.calls), labels = entries.flatMap(e => e.callLabels);
-  const action = safeBatchAction(snapshot, plan.multisend, calls, labels, options.label);
+  const action = safeBatchAction(snapshot, plan.multisend ?? zeroAddress, calls, labels, options.label);
   return { ...action, receives: entries.flatMap(e => e.receives), nfts: entries.flatMap(e => e.nfts ?? []), queued: entries.flatMap(e => e.queued),
     forbiddenRecipients: options.forbiddenRecipients,
     destinations: [plan.destination],
