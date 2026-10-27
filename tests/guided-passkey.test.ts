@@ -18,7 +18,7 @@ describe('guided passkey identification boundaries', () => {
  it('uses the fixed trusted origin, discovery challenge and cancellation signal', async () => {
   const controller = new AbortController(), progress = vi.fn();
   const result = await discoverPasskey(controller.signal, progress);
-  expect(m.request).toHaveBeenCalledOnce();expect(m.request).toHaveBeenCalledWith('0x1234', undefined, 'https://bunker.usepicnic.com:8443', controller.signal);
+  expect(m.request).toHaveBeenCalledOnce();expect(m.request).toHaveBeenCalledWith('0x1234', undefined, 'https://bunker.usepicnic.com:8443', controller.signal, undefined);
   expect(result.addresses).toEqual([safe]);expect(result.needsSecond).toBe(false);expect(progress).toHaveBeenCalled();
  });
  it('does not expose accounts when multiple verified key candidates remain', async () => {
@@ -40,4 +40,13 @@ describe('guided passkey identification boundaries', () => {
   m.discover.mockRejectedValue(new Error('RPC failed'));m.resolve.mockReturnValue({ key: undefined, matches: [], needsSecondAssertion: false });
   const result = await discoverPasskey(new AbortController().signal, () => {});expect(result.addresses).toEqual([]);expect(result.issues.length).toBeGreaterThan(0);
  });
+});
+
+it('keeps the chosen security-key hint for the second identity assertion', async () => {
+ const signal = new AbortController().signal;
+ m.resolve.mockReturnValue({ matches: [key, { x: '0x03', y: '0x04' }], needsSecondAssertion: true });
+ await discoverPasskey(signal, () => {}, 'security-key');
+ await confirmPasskey(signal, () => {});
+ expect(m.request).toHaveBeenNthCalledWith(1, '0x1234', undefined, 'https://bunker.usepicnic.com:8443', signal, 'security-key');
+ expect(m.request).toHaveBeenNthCalledWith(2, '0x1234', 'credential', 'https://bunker.usepicnic.com:8443', signal, 'security-key');
 });

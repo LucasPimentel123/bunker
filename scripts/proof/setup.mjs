@@ -207,6 +207,9 @@ async function doctor() {
   await check('resolution', async () => { const ips = await lookup(HOST, { all: true }); return { ok: ips.length > 0 && ips.every(ip => ip.address === '127.0.0.1'), addresses: ips.map(ip => ip.address) }; });
   await check('macOSTrust', async () => { run('/usr/bin/security', ['verify-cert', '-c', paths.cert, '-p', 'ssl', '-n', HOST, '-L']); return { ok: true }; });
   await check('localServer', async () => ({ ok: true, ...await probeHttps({ root: await readFile(paths.root), fingerprint: plan.leafFingerprint }) }));
+  if (['certificates', 'hosts', 'resolution', 'macOSTrust', 'localServer'].every(name => result[name]?.ok)) {
+    result.browserNextStep = 'Abra a URL no navegador que contém sua carteira. Se o Chrome mostrar NET::ERR_CERT_AUTHORITY_INVALID, salve o trabalho e reinicie-o completamente (chrome://restart), então reabra a URL. Não ignore avisos TLS. Se persistir, revise certificado, perfil e políticas do navegador. HTTPS aceito não confirma a passkey.';
+  }
   console.log(JSON.stringify(result, null, 2));
   if (Object.values(result).some(value => typeof value === 'object' && !value.ok)) process.exitCode = 1;
 }

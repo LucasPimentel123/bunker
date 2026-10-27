@@ -27,3 +27,21 @@ continue in the UI. Ask for additional context only when needed to answer.
 
 Do not request private keys, seeds, passwords, OTPs, passkey assertions or
 credential-vault exports. The user performs all wallet and authenticator actions.
+
+### Security key opens a phone QR code
+
+The user can select **Com uma chave de segurança** to prefer a YubiKey or other
+physical authenticator. This sends WebAuthn's `security-key` hint, not a transport
+restriction. Browsers that ignore hints retain their normal chooser. If a phone QR
+code still appears, use the browser's other-device/options control to choose a
+security key. The user handles insertion, PIN and touch privately. Do not conclude
+that the key is empty from a canceled or timed-out request.
+
+Discovery still requires a discoverable credential for `usepicnic.com`. An older
+non-discoverable credential needs its credential ID; this UI does not add an import
+flow or reconstruct it from an on-chain public key. Never reset the key or create a
+replacement credential as a troubleshooting step. HTTPS acceptance, opening the
+security-key chooser, and successful on-chain verification are separate outcomes.
+
+References: [Chrome WebAuthn hints](https://developer.chrome.com/blog/passkeys-updates-chrome-129),
+[Yubico credential discovery](https://developers.yubico.com/Passkeys/Passkey_concepts/Discoverable_vs_non-discoverable_credentials.html).
