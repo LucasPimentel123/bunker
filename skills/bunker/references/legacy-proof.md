@@ -1,10 +1,4 @@
----
-name: picnic-recovery
-description: >-
-  Guide Picnic passkey recovery experiments through the Chrome extension or the local macOS HTTPS proof: build a reviewed package, diagnose the Safe, validate an existing passkey, and simulate a withdrawal. The macOS fallback includes reversible HTTPS setup. Authenticated production releases and live passkey transfers are not yet available.
----
-
-# Picnic local recovery proof
+# Legacy extension and isolated passkey proof
 
 For the **passkey-only browser extension**, read `docs/passkey-extension.md`
 first and use `extension:build`, `extension:test` and `extension:package`.

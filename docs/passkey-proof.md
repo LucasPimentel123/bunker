@@ -1,5 +1,12 @@
 # Local passkey proof — milestone 1
 
+For the normal guided Bunker experience, start with the
+[Bunker skill](../skills/bunker/SKILL.md). It handles setup and opens
+`/designs/guided.html?design=segments`. The root Bunker and isolated proof described
+below are development entry points with different capabilities; they are not the
+default guided flow. Guardian recovery in the guided flow is real; its withdrawal
+screen remains demonstrative.
+
 ## Local Bunker profile
 
 For the passkey-first discovery UI at **https://bunker.usepicnic.com:8443**, run:

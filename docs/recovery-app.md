@@ -20,7 +20,7 @@ Open `http://127.0.0.1:4173`. The build contains its own scripts, styles, ABI fr
 
 ## Experimental local passkey proof
 
-An isolated, read-only HTTPS app verifies an existing Picnic passkey against its on-chain signer and simulates a native withdrawal. It has no broadcast route. Machine-specific trust/domain changes require explicit approval. Real-credential acceptance is still pending; full installation/release packaging follows that gate. See [the procedure](passkey-proof.md) and [the companion skill](../skills/picnic-recovery/SKILL.md).
+An isolated, read-only HTTPS app verifies an existing Picnic passkey against its on-chain signer and simulates a native withdrawal. It has no broadcast route. Machine-specific trust/domain changes require explicit approval. Real-credential acceptance is still pending; full installation/release packaging follows that gate. See [the procedure](passkey-proof.md) and [the legacy proof instructions](../skills/bunker/references/legacy-proof.md). The normal Bunker entry point is the [Bunker skill](../skills/bunker/SKILL.md), which opens the guided UI instead of this proof.
 
 ## Use
 
