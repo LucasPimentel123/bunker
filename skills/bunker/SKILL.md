@@ -126,7 +126,10 @@ Read [local-session.md](references/local-session.md) for exact resume/cleanup ca
 6. **Open:** use the normal browser-opening capability for
    **https://bunker.usepicnic.com:8443/designs/guided.html?design=segments**.
    If browser access is blocked, give the user that link and hand off opening it.
-   Never bypass browser policy, HSTS, TLS validation or certificate warnings.
+   Verify browser acceptance separately from doctor. For Chrome certificate errors
+   after successful local checks, follow the restart guidance in
+   [local-session.md](references/local-session.md). Never bypass browser policy,
+   HSTS, TLS validation or certificate warnings.
 
 Tell the user when you are checking, building, waiting for OS authorization or
 ready. On failure, name the failed stage and the next action. Do not print an

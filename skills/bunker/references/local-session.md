@@ -63,6 +63,21 @@ For a browser certificate failure, inspect expiry, trust, hostname and the known
 listener; never click through. If the browser automation policy denies access,
 hand the local URL to the user rather than changing automation surfaces.
 
+### Chrome still shows NET::ERR_CERT_AUTHORITY_INVALID
+
+If every doctor check passes after installing the approved CA, Chrome may still
+need a full restart to pick up local trust. Ask the user to save browser work and
+restart Chrome with `chrome://restart`, then reopen the guided URL in the profile
+that holds their wallet. Do not restart during a wallet/passkey request or pending
+transaction. Do not reinstall the CA, broaden trust or bypass the warning.
+Verify that the actual browser loads the guided page without a TLS interstitial;
+doctor alone cannot establish this. If the warning persists, inspect the browser's
+certificate, profile and policies instead of assuming a cache issue.
+
+Chrome consumes local SSL trust from the macOS Keychain; see the
+[Chrome trust-store FAQ](https://chromium.googlesource.com/chromium/src/+/main/net/data/ssl/chrome_root_store/faq.md).
+Other browsers and authenticator providers still require their own acceptance checks.
+
 ## Cleanup
 
 When requested, stop the retained foreground session (Ctrl+C), confirm its port is

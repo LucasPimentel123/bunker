@@ -267,6 +267,16 @@ test('the contract delay is visible before authorizing recovery, outside collaps
  const h=setup();guardianRecovery(h);h.api.startMethod('wallet');await h.api.connectSource('actual');await h.click('no-passkey');await flush();h.s.recoveryOwner=DEST;await h.api.next();const text=h.scene.innerHTML;assert.match(text,/<strong>7 dias<\/strong>/);assert.doesNotMatch(text,/Detalhes da recuperação|<details/);assert.match(text,new RegExp(DEST));assert.match(text,/data-action="edit-recovery-owner"/);h.api.restart();
 });
 
+
+test('security-key choice passes the hint, keeps passkey flow and resets for normal passkeys', async()=>{
+ const h=setup(), hints=[];
+ h.ctx.window.picnicGuidedDiscovery={discoverPasskey:async(signal,progress,hint)=>{hints.push(hint);return {addresses:[],issues:[],needsSecond:false};}};
+ assert.match(h.scene.innerHTML,/data-method="security-key"/);
+ h.api.startMethod('security-key');await flush();
+ assert.equal(h.s.method,'passkey');assert.deepEqual(hints,['security-key']);
+ h.api.startMethod('passkey');await flush();assert.deepEqual(hints,['security-key',undefined]);
+});
+
 test('WalletConnect pairing shows only the mobile QR code and cancel action',()=>{
  const h=setup();h.seed();h.api.go('fees');h.s.walletConnect={qr:'data:image/png;base64,test'};h.api.render();assert.match(h.scene.innerHTML,/QR code WalletConnect/);assert.match(h.scene.innerHTML,/com sua carteira no celular/);assert.match(h.scene.innerHTML,/Cancelar conexão/);assert.doesNotMatch(h.scene.innerHTML,/Abrir carteira|Copiar conexão|copy-qr|href="wc:/);
 });

@@ -72,9 +72,11 @@ export async function encodeAssertion(assertion: Assertion, challenge: Hex, conf
 export function contractSignature(signer: Address, signature: Hex): Hex {
   return concatHex([pad(signer, { size: 32 }), toHex(65, { size: 32 }), "0x00", toHex((signature.length - 2) / 2, { size: 32 }), signature]);
 }
-export async function requestPasskey(challenge: Hex, credentialId?: string, expectedOrigin = PROOF_ORIGIN, signal?: AbortSignal): Promise<PublicKeyCredential> {
+export async function requestPasskey(challenge: Hex, credentialId?: string, expectedOrigin = PROOF_ORIGIN, signal?: AbortSignal, hint?: "security-key"): Promise<PublicKeyCredential> {
   if (location.origin !== expectedOrigin || !window.isSecureContext) throw new Error("Abra a interface de passkeys na origem confiável configurada.");
   const credential = await navigator.credentials.get({ ...(signal ? { signal } : {}), publicKey: {
+    // A UI preference only: do not filter transports or weaken user verification.
+    ...(hint === "security-key" ? { hints: [hint] } : {}),
     rpId: RP_ID, challenge: new Uint8Array(hexToBytes(challenge)), userVerification: "required", timeout: 60_000,
     ...(credentialId ? { allowCredentials: [{ type: "public-key" as const, id: credentialBytes(credentialId) }] } : {}),
   } });
