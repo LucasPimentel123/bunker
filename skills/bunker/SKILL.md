@@ -2,9 +2,10 @@
 name: bunker
 license: MIT
 description: >-
-  Set up and run Picnic Bunker locally, guide account access with a passkey or external wallet,
-  diagnose interrupted setup, and remove its local HTTPS configuration. Use when someone wants
-  to open Bunker or recover access to a Picnic account independently of Picnic's hosted app.
+  Set up and open Picnic Bunker's local recovery UI, diagnose interrupted setup,
+  and remove its local HTTPS configuration. Use when someone wants to open Bunker
+  or recover access to their Picnic account independently of Picnic's hosted app.
+  Account access choices happen in the UI, not in chat.
 ---
 
 # Bunker
@@ -12,6 +13,25 @@ description: >-
 You operate the local setup; the user operates the wallet and passkey in Bunker's
 guided UI. Start with that UI, not the extension, isolated proof or developer
 workbench. Follow the user's language and explain one next action at a time.
+
+## Start with setup, then the UI
+
+A request to recover a Picnic account using this repository is an account-recovery
+request. Bunker is the tool, not the thing being restored. Do not ask the user to
+choose between recovering their Picnic account and repairing Bunker software.
+Only troubleshoot or develop the software when the user actually requests that.
+
+Proceed to source inspection and local setup. Before opening the UI, do not ask
+whether the user has a passkey, wallet, email login, guardian, Safe address or
+recovery destination. Those are decisions for the guided UI, not prerequisites
+for launching it. Do not create an additional "other recovery method" option in chat.
+Ask only for information that blocks local setup and cannot be inspected, or for
+the concrete HTTPS authorization below. Keep existing safety and approval checks.
+
+A suitable first response is: "I'll prepare Bunker on your computer and open the
+recovery interface. You'll choose how to access your Picnic account there."
+Once it is ready, open it and give the user the URL; stay available for observed
+errors rather than starting a second recovery questionnaire in chat.
 
 ## Agent-independent execution
 

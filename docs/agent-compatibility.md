@@ -7,6 +7,19 @@ Its MIT license is included in the folder. There is no model SDK, vendor API key
 MCP server or proprietary installer required by the skill. The agent host itself
 may use a hosted model or a local/open-source model.
 
+## Start with the UI
+
+The user can ask:
+
+> Help me recover access to my Picnic account using Bunker: https://github.com/usePicnic/bunker
+
+The agent prepares local setup, obtains approval for the exact HTTPS changes,
+checks it and opens the guided UI. The user chooses passkey or wallet **inside
+Bunker**. Do not put an account questionnaire before the UI or ask whether
+"recover" means repairing the Bunker software. Ask about software repair only when
+that is the user's actual task. Missing local capabilities and concrete setup
+failures still require the handoffs below.
+
 ## Load the same folder
 
 Start from a reviewed source revision. Install or copy the **complete** `bunker`

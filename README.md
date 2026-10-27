@@ -26,11 +26,12 @@ Bunker helps you regain control of your Picnic accounts with an existing
 Copy this into your AI assistant:
 
 ```text
-Please help recover Picnic: github.com/usePicnic/bunker
+Help me recover access to my Picnic account using Bunker: https://github.com/usePicnic/bunker
 ```
 
 Your assistant prepares Bunker on your computer and opens the guided interface.
-You choose your account and confirm passkey and wallet requests yourself.
+You choose how to access your account inside Bunker, then confirm passkey and
+wallet requests yourself.
 
 **macOS for now.** Your assistant checks the prerequisites and asks before
 changing local HTTPS settings. Never share a seed, private key or passkey export
@@ -68,8 +69,12 @@ control on-chain; knowing an address alone does not grant access.
 <summary><strong>For AI assistants</strong></summary>
 
 Read [the Bunker skill](skills/bunker/SKILL.md) and follow its workflow directly.
-Resolve the source to a fixed commit, check the local environment, then guide
-setup and open the UI. Do not require the user to install a skill or learn a
+This request is about recovering access to a Picnic account; Bunker is the tool.
+Prepare and open the guided UI before asking about account access. Passkey,
+wallet and guardian choices belong in that UI, not a preliminary chat interview.
+For a fresh setup without a supplied revision, resolve the canonical repository's
+current `main` to a fixed commit. Check the local environment, obtain approval for
+the exact HTTPS changes, then open the UI. Do not require the user to install a skill or learn a
 vendor-specific command first. Native skill installation is optional.
 
 See [agent compatibility](docs/agent-compatibility.md) for host capabilities and
